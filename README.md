@@ -7,6 +7,7 @@ I hope to be able to implement semaphores, queues and mutexes.
 I want to implement RusTOS with these charateristics:
 - boolean vectors for processes states and priority
 - no idle process: cpu is put to sleep by the scheduler if there's no more to do
+- software timers, to handle non-looping tasks
 - ability to create processes with a procedural macro, with something like: 
 ``` 
 #[process(prio = 5, stack = 512)]

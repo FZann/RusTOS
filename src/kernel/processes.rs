@@ -1,3 +1,5 @@
+use super::scheduler::Scheduler;
+
 /// Wrapper per avere la type-safety.
 #[derive(Clone, Copy)]
 pub struct StackPointer(*const usize);
@@ -18,6 +20,24 @@ impl From<TaskHandle> for usize {
 }
 
 pub struct Ticks(usize);
+
+impl Ticks {
+    pub const fn new(ticks: usize) -> Self {
+        Ticks(ticks)
+    }
+
+    pub fn ticks(&self) -> usize {
+        self.0
+    }
+
+    pub fn increment(&mut self) {
+        self.0 += 1;
+    }
+
+    pub fn decrement(&mut self) {
+        self.0 -= 1;
+    }
+}
 
 pub struct Stack {
     stack: &'static mut [usize],
@@ -71,14 +91,14 @@ impl Stack {
 
 /// Obbliga il tipo dati ad essere Send
 pub trait Process {
-    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self
+    fn new<S>(task: TaskHandle, stack: &'static mut [usize], prio: u8, sched: &'static mut S) -> Self
     where
-        Self: Sized;
+        Self: Sized,
+        S: Scheduler;
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
     fn set_prio(&mut self, prio: u8);
 
-    fn run(&self);
     fn pause(&self);
     fn stop(&self);
     fn sleep(&self, ticks: Ticks);
@@ -97,15 +117,17 @@ pub struct PCB {
     task: TaskHandle,
     prio: u8,
     sleep: Ticks,
+    sched: &'static mut dyn Scheduler,
 }
 
 impl Process for PCB {
-    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self {
+    fn new<S: Scheduler>(task: TaskHandle, stack: &'static mut [usize], prio: u8, sched: &'static mut S) -> Self {
         Self {
             task,
             stack: Stack::new(stack, task),
             prio,
             sleep: Ticks(0),
+            sched,
         }
     }
 
@@ -129,11 +151,7 @@ impl Process for PCB {
         self.stack.sp_ref()
     }
 
-    fn run(&self) {
-        todo!()
-    }
-
-    fn pause(&self) {
+     fn pause(&self) {
         todo!()
     }
 
@@ -142,7 +160,7 @@ impl Process for PCB {
     }
 
     fn sleep(&self, ticks: Ticks) {
-        todo!()
+        self.sched.process_sleep(self.prio, ticks);
     }
 
     fn can_run(&self) -> bool {

@@ -1,6 +1,6 @@
 use crate::kernel::processes::PCB;
 
-use super::processes::Process;
+use super::processes::{Process, Ticks};
 
 pub struct BooleanVector {
     vec: usize,
@@ -36,13 +36,26 @@ impl From<&BooleanVector> for usize {
     }
 }
 
+/// Il suo scopo è quello di forzare un inc_system_ticks prima di chiamare run_next
+pub struct IncToken;
+
 pub trait Scheduler {
     fn start(&self) -> !;
-    fn run_next(&mut self);
+    
+    fn process_idle(&mut self, prio: u8);
+    fn process_stop(&mut self, prio: u8);
+    fn process_sleep(&mut self, prio: u8, ticks: Ticks);
+
+    fn inc_system_ticks(&mut self) -> IncToken;
+    fn run_next(&mut self, _token: IncToken);
     fn add_process(&mut self, process: PCB) -> Result<(), ()>;
     fn remove_process(&mut self, prio: u8) -> Result<(), ()>;
 }
 
+/// La struttura tiene insieme i processi e i loro stati correlati
+/// In questo modo ho creato un pezzetto dello scheduler.
+/// I processi non sono a conoscenza del loro stato (idle, sleep, run...),
+/// ma lo scheduler sì, tramite questa struttura.
 struct ProcessList {
     processes: [Option<PCB>; 32],
     paused: BooleanVector,
@@ -66,6 +79,10 @@ impl<'stack> ProcessList {
     }
 
     pub fn find_next_ready(&self) -> Option<&PCB> {
+        /* Usando l'istruzione 'clz' in assembly, otteniamo direttamente l'indice del processo
+           con il quale accedere all'array dei PCB. Con una singola istruzione otteniamo immediatamente
+           ciò che ci serve!
+         */ 
         let running = self.running.find_first_set();
         let next = self.paused.find_first_set();
 
@@ -95,6 +112,34 @@ impl<'stack> ProcessList {
     pub fn remove(&mut self, _prio: u8) -> Result<(), ()> {
         Ok(())
     }
+
+    pub fn set_idle(&mut self, prio: u8) {
+        self.paused.set(prio);
+
+        self.running.clear(prio);
+        self.stopped.clear(prio);
+        self.sleeping.clear(prio);
+    }
+
+    pub fn set_stopped(&mut self, prio: u8) {
+        self.stopped.set(prio);
+        
+        self.paused.clear(prio);
+        self.running.clear(prio);
+        self.sleeping.clear(prio);
+    }
+
+    pub fn set_sleeping(&mut self, prio: u8) {
+        self.sleeping.set(prio);
+
+        self.paused.clear(prio);
+        self.running.clear(prio);
+        self.stopped.clear(prio);
+    }
+
+    pub fn get_process_ref(&self, prio: usize) -> Option<&PCB> {
+        self.processes[prio].as_ref()
+    }
 }
 
 /// Lo Scheduler tiene in memoria anche le variabili che servono per completare
@@ -102,13 +147,15 @@ impl<'stack> ProcessList {
 /// la modifica dei valori, perché non risultano statici allo scheduler stesso
 #[repr(C)]
 pub struct Preemptive<'pcb> {
-    /// L'accesso a questa variabile avviene anche via assembly! Non modificare la dichiarazione!
+    /* !!! --------------------- !!! */
+    // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
     running_stack_ptr: usize,
-    /// L'accesso a questa variabile avviene anche via assembly! Non modificare la dichiarazione!
     next_stack_ptr: usize,
+    running_process: Option<&'pcb PCB>,
+    /* !!! --------------------- !!! */
 
-    running_proccess: Option<&'pcb PCB>,
     list: ProcessList,
+    ticks: Ticks,
 }
 
 impl<'stack> Preemptive<'stack> {
@@ -116,8 +163,9 @@ impl<'stack> Preemptive<'stack> {
         Self {
             running_stack_ptr: 0,
             next_stack_ptr: 0,
-            running_proccess: None,
+            running_process: None,
             list: ProcessList::new(),
+            ticks: Ticks::new(0),
         }
     }
 }
@@ -134,15 +182,28 @@ impl<'stack> Scheduler for Preemptive<'stack> {
         }
     }
 
+    fn process_idle(&mut self, prio: u8) {
+        self.list.set_idle(prio);
+    }   
+
+    fn process_stop(&mut self, prio: u8) {
+        self.list.set_stopped(prio);
+    }
+
+    fn process_sleep(&mut self, prio: u8, ticks: Ticks) {
+        self.list.set_sleeping(prio);
+        self.list.get_process_ref(prio as usize).map(|pcb| pcb.sleep(ticks));
+    }
+
+    fn inc_system_ticks(&mut self) -> IncToken {
+        self.ticks.increment();
+        IncToken
+    }
+
     /// Questa funzione è eseguita nell'interrupt SysTick, per ricercare il prossimo task da avviare.
     /// Al termine, la funzione triggera l'interrupt di PendSV, dove avviene lo switch.
-    fn run_next(&mut self) {
-        if let Some(next) = self.list.find_next_ready() {
-            self.next_stack_ptr = 0;
-            //next.run();
-        } else {
-            self.next_stack_ptr = 0;
-        }
+    fn run_next(&mut self, _token: IncToken) {
+        todo!();
     }
 
     fn add_process(&mut self, process: PCB) -> Result<(), ()> {
