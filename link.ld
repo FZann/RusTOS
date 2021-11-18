@@ -1,8 +1,8 @@
 MEMORY
 {
-  /* NOTE 1 K = 1 KiBi = 1024 bytes */
-  FLASH :   ORIGIN = 0x08000000, LENGTH = 256K
-  RAM   :   ORIGIN = 0x20000000, LENGTH = 64K
+    /* NOTE 1 K = 1 KiBi = 1024 bytes */
+    FLASH :   ORIGIN = 0x08000000, LENGTH = 256K
+    RAM   :   ORIGIN = 0x20000000, LENGTH = 64K
 }
 
 EXTERN(__ENTRY);
@@ -36,10 +36,12 @@ SECTIONS
         *(.rodata .rodata.*);
     } > FLASH
 
-    /* ### .gnu.sgstubs
-        This section contains the TrustZone-M veneers put there by the Arm GNU linker. */
+    /*
+    ### .gnu.sgstubs
+    This section contains the TrustZone-M veneers put there by the Arm GNU linker. */
     /* Security Attribution Unit blocks must be 32 bytes aligned. */
     /* Note that this pads the FLASH usage to 32 byte alignment. */
+    /*
     .gnu.sgstubs : ALIGN(32)
     {
         . = ALIGN(32);
@@ -50,7 +52,8 @@ SECTIONS
         . = ALIGN(32);
         __veneer_limit = .;
     } > FLASH
-
+    */
+    
     /* usato per caricare i dati inizializzati */
     ld_data = LOADADDR(.data);
     .data : {
@@ -58,7 +61,7 @@ SECTIONS
         ld_data_start = . ;
         *(.data*)
         . = ALIGN(4);
-        ld_data_end = . ;
+    ld_data_end = . ;
     } > RAM AT > FLASH
 
     .bss (NOLOAD) : {
@@ -67,20 +70,24 @@ SECTIONS
         *(.bss*)
         ld_bss_end = . ;
         . = ALIGN(4);
-    } > RAM
+        } > RAM
 
-    __stack_start = ORIGIN(RAM) + SIZEOF(RAM) - 0x200;
+        __stack_start = ORIGIN(RAM) + SIZEOF(RAM) - 0x200;
 
-    .stack : AT(__stack_start) {
+        .stack : AT(__stack_start) {
         . = ALIGN(8);
     } > RAM
 
-  /DISCARD/ :
-  {
-    /* Unused exception related info that only wastes space */
-    *(.ARM.exidx);
-    *(.ARM.exidx.*);
-    *(.ARM.extab.*);
-  }
+
+    /DISCARD/ :
+    {
+        /* Unused exception related info that only wastes space */
+        *(.ARM.exidx);
+        *(.ARM.exidx.*);
+        *(.ARM.extab.*);
+        *(.gnu.sgstubs*)
+        *(.glue_7t) *(.glue_7)
+        *(.got .got.*)
+    }
 
 }

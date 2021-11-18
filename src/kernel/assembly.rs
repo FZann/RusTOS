@@ -54,8 +54,7 @@ impl crate::kernel::scheduler::BooleanVector {
     }
 }
 
-#[no_mangle]
-static SCHEDULER: usize = 0;
+use crate::kernel::scheduler::SCHEDULER;
 
 #[naked]
 #[no_mangle]
@@ -103,7 +102,7 @@ pub unsafe extern "C" fn PendSV() {
 #[no_mangle]
 extern "C" fn sleep_cpu() {
     loop {
-        unsafe{
+        unsafe {
             asm!("wfi");
         }
     }
@@ -112,7 +111,7 @@ extern "C" fn sleep_cpu() {
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn SVCall() {
-    asm!("", options(noreturn));
+    asm!("svc   0", options(noreturn));
 }
 
 #[naked]

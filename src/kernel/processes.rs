@@ -1,14 +1,27 @@
-use super::scheduler::Scheduler;
-
 /// Wrapper per avere la type-safety.
 #[derive(Clone, Copy)]
 pub struct StackPointer(*const usize);
+
+impl StackPointer {
+    pub const fn new() -> Self {
+        Self(0 as *const usize)
+    }
+}
 
 impl From<*const usize> for StackPointer {
     fn from(sp: *const usize) -> Self {
         StackPointer(sp)
     }
 }
+
+impl From<usize> for StackPointer {
+    fn from(sp: usize) -> Self {
+        StackPointer(sp as *const usize)
+    }
+}
+
+unsafe impl Sync for StackPointer {}
+unsafe impl Send for StackPointer {}
 
 #[derive(Clone, Copy)]
 pub struct TaskHandle(fn() -> !);
@@ -89,24 +102,19 @@ impl Stack {
     }
 }
 
-/// Obbliga il tipo dati ad essere Send
 pub trait Process {
-    fn new<S>(task: TaskHandle, stack: &'static mut [usize], prio: u8, sched: &'static mut S) -> Self
+    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self
     where
-        Self: Sized,
-        S: Scheduler;
+        Self: Sized;
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
     fn set_prio(&mut self, prio: u8);
 
-    fn pause(&self);
-    fn stop(&self);
-    fn sleep(&self, ticks: Ticks);
-
-    fn can_run(&self) -> bool;
-
     fn stack_pointer(&self) -> StackPointer;
     fn stack_ptr_ref(&self) -> &StackPointer;
+
+    fn sleep(ticks: Ticks);
+    fn stop();
 }
 
 /// **PCB**
@@ -116,18 +124,16 @@ pub struct PCB {
     stack: Stack,
     task: TaskHandle,
     prio: u8,
-    sleep: Ticks,
-    sched: &'static mut dyn Scheduler,
+    pub(crate) sleep: Ticks,
 }
 
 impl Process for PCB {
-    fn new<S: Scheduler>(task: TaskHandle, stack: &'static mut [usize], prio: u8, sched: &'static mut S) -> Self {
+    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self {
         Self {
             task,
             stack: Stack::new(stack, task),
             prio,
             sleep: Ticks(0),
-            sched,
         }
     }
 
@@ -146,24 +152,11 @@ impl Process for PCB {
     fn stack_pointer(&self) -> StackPointer {
         self.stack.sp()
     }
-
     fn stack_ptr_ref(&self) -> &StackPointer {
         self.stack.sp_ref()
     }
 
-     fn pause(&self) {
-        todo!()
-    }
+    fn sleep(ticks: Ticks) {}
 
-    fn stop(&self) {
-        todo!()
-    }
-
-    fn sleep(&self, ticks: Ticks) {
-        self.sched.process_sleep(self.prio, ticks);
-    }
-
-    fn can_run(&self) -> bool {
-        todo!()
-    }
+    fn stop() {}
 }

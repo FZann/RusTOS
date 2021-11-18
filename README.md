@@ -1,27 +1,41 @@
-# RusTOS
-Real Time OS in Rust
+[![crates.io](https://img.shields.io/crates/v/cortex-m-rt.svg)](https://crates.io/crates/cortex-m-rt)
+[![crates.io](https://img.shields.io/crates/d/cortex-m-rt.svg)](https://crates.io/crates/cortex-m-rt)
 
-My goal is to build a simple RTOS, just because, and learn in the process.
-I hope to be able to implement semaphores, queues and mutexes.
+# `cortex-m-rt`
 
-I want to implement RusTOS with these charateristics:
-- boolean vectors for processes states and priority
-- no idle process: cpu is put to sleep by the scheduler if there's no more to do
-- software timers, to handle non-looping tasks
-- ability to create processes with a procedural macro, with something like: 
-``` 
-#[process(prio = 5, stack = 512)]
-fn do_something() -> ! {
-  /* init */
-  loop {
-  /* task */
-  }
-}
-```
-- interrupt handler are called with a Rust reference to interrupting peripheral. Address selected in assembly. I think this is feasible.
-- create an HAL that takes advantage of the underlying OS syncronization for peripheral access.
-- use of async whenever possible. Maybe implement an async executor within an OS process. If it is possible!... :)
+> Startup code and minimal runtime for Cortex-M microcontrollers
 
-Credits for ideas:
- - Harsark project for boolean vectors
- - RTIC project for process declaration with macros
+This project is developed and maintained by the [Cortex-M team][team].
+
+# [Documentation](https://docs.rs/cortex-m-rt)
+
+# Minimum Supported Rust Version (MSRV)
+
+This crate is guaranteed to compile on stable Rust 1.39.0 and up. It *might*
+compile with older versions but that may change in any new patch release.
+
+# License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  http://www.apache.org/licenses/LICENSE-2.0)
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
+
+## Code of Conduct
+
+Contribution to this crate is organized under the terms of the [Rust Code of
+Conduct][CoC], the maintainer of this crate, the [Cortex-M team][team], promises
+to intervene to uphold that code of conduct.
+
+[CoC]: CODE_OF_CONDUCT.md
+[team]: https://github.com/rust-embedded/wg#the-cortex-m-team

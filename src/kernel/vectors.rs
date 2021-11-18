@@ -1,4 +1,7 @@
-use super::assembly::{HardFaultTrampoline, PendSV, SVCall, __ENTRY};
+use crate::kernel::assembly::{HardFaultTrampoline, PendSV, SVCall, __ENTRY};
+use crate::kernel::scheduler::SCHEDULER;
+
+use super::scheduler::Scheduler;
 
 
 #[doc(hidden)]
@@ -65,6 +68,14 @@ static __ARM_VECTORS: [Vector; 14] = [
 ];
 
 #[no_mangle]
+#[link_section = ".vector_table_interrupts"]
+static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
+
+
+
+
+
+#[no_mangle]
 pub extern "C" fn DebugMonitor() {}
 
 #[no_mangle]
@@ -80,9 +91,10 @@ pub extern "C" fn MemoryManagement() {}
 pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
-pub extern "C" fn SysTick() {}
+pub extern "C" fn SysTick() {
+    let sched = unsafe  { &mut SCHEDULER };
+    let token = sched.inc_system_ticks();
+    sched.run_next(token);
+}
 
 
-#[no_mangle]
-#[link_section = ".vector_table_interrupts"]
-static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 } ; 240];
