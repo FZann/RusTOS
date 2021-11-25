@@ -18,6 +18,7 @@ SECTIONS
         LONG(__stack_start);
         *(.vector_table_arm_vectors)
         *(.vector_table_interrupts)
+        *(.static_kernel_variables)
     } > FLASH 
 
     PROVIDE(__vector_end = ADDR(.vector_table) + SIZEOF(.vector_table));
@@ -36,24 +37,6 @@ SECTIONS
         *(.rodata .rodata.*);
     } > FLASH
 
-    /*
-    ### .gnu.sgstubs
-    This section contains the TrustZone-M veneers put there by the Arm GNU linker. */
-    /* Security Attribution Unit blocks must be 32 bytes aligned. */
-    /* Note that this pads the FLASH usage to 32 byte alignment. */
-    /*
-    .gnu.sgstubs : ALIGN(32)
-    {
-        . = ALIGN(32);
-        __veneer_base = .;
-        *(.gnu.sgstubs*)
-        *(.glue_7t) *(.glue_7)
-        *(.debug*)
-        . = ALIGN(32);
-        __veneer_limit = .;
-    } > FLASH
-    */
-    
     /* usato per caricare i dati inizializzati */
     ld_data = LOADADDR(.data);
     .data : {

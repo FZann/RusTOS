@@ -1,3 +1,5 @@
+use core::cell::Cell;
+
 /// Wrapper per avere la type-safety.
 #[derive(Clone, Copy)]
 pub struct StackPointer(*const usize);
@@ -26,31 +28,51 @@ unsafe impl Send for StackPointer {}
 #[derive(Clone, Copy)]
 pub struct TaskHandle(fn() -> !);
 
+impl TaskHandle {
+    pub fn new(task: fn() -> !) -> Self {
+        Self(task)
+    }
+}
+
 impl From<TaskHandle> for usize {
     fn from(handle: TaskHandle) -> Self {
         handle.0 as usize
     }
 }
 
-pub struct Ticks(usize);
+#[derive(Clone, PartialEq)]
+pub struct Ticks(Cell<usize>);
 
 impl Ticks {
     pub const fn new(ticks: usize) -> Self {
-        Ticks(ticks)
+        Ticks(Cell::new(ticks))
     }
 
-    pub fn ticks(&self) -> usize {
-        self.0
+    pub fn increment(&self) {
+        self.0.set(self.0.get() + 1);
     }
 
-    pub fn increment(&mut self) {
-        self.0 += 1;
+    pub fn decrement(&self) {
+        self.0.set(self.0.get() - 1);
     }
 
-    pub fn decrement(&mut self) {
-        self.0 -= 1;
+    pub fn set(&self, ticks: usize) {
+        self.0.set(ticks);
+    }
+
+    pub fn value(&self) -> usize {
+        self.0.get()
     }
 }
+
+impl core::ops::Add for Ticks {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.0.get() + rhs.0.get())
+    }
+}
+
 
 pub struct Stack {
     stack: &'static mut [usize],
@@ -113,18 +135,25 @@ pub trait Process {
     fn stack_pointer(&self) -> StackPointer;
     fn stack_ptr_ref(&self) -> &StackPointer;
 
-    fn sleep(ticks: Ticks);
-    fn stop();
+    fn set_ticks(&self, ticks: Ticks);
+    fn get_ticks(&self) -> Ticks;
 }
 
 /// **PCB**
 ///
 /// Process Control Block per un dispositivo ARM Cortex-M4.
+/// In questo caso i ticks indicano i tick in valore assoluto.
+/// Questo perché i valori di Sleep sono calcolati aggiungendo
+/// il tempo di Sleep al valore di ticks attuali.
+/// Questa tecnica mi permette di risparmiare il decremento
+/// dei tick di sleeping e di effettuare unicamente il check
+/// di verifica con l'if.
+
 pub struct PCB {
     stack: Stack,
     task: TaskHandle,
     prio: u8,
-    pub(crate) sleep: Ticks,
+    ticks: Ticks,
 }
 
 impl Process for PCB {
@@ -133,7 +162,7 @@ impl Process for PCB {
             task,
             stack: Stack::new(stack, task),
             prio,
-            sleep: Ticks(0),
+            ticks: Ticks::new(0),
         }
     }
 
@@ -156,7 +185,11 @@ impl Process for PCB {
         self.stack.sp_ref()
     }
 
-    fn sleep(ticks: Ticks) {}
+    fn set_ticks(&self, ticks: Ticks) {
+        self.ticks.set(ticks.value());
+    }
 
-    fn stop() {}
+    fn get_ticks(&self) -> Ticks {
+        self.ticks.clone()
+    }
 }

@@ -1,5 +1,9 @@
 mod assembly;
 mod vectors;
 
-mod processes;
-mod scheduler;
+pub mod processes;
+pub mod scheduler;
+
+pub enum SysCallType {
+    ContextSwitch
+}

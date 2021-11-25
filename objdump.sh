@@ -1,0 +1,1 @@
+cargo objdump --release -- --disassemble

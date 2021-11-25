@@ -1,5 +1,9 @@
 use crate::kernel::processes::{Process, StackPointer, Ticks, PCB};
-use core::cell::Cell;
+use core::{cell::Cell, intrinsics::unreachable};
+use crate::kernel::assembly::SystemCall;
+
+use super::SysCallType;
+
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
@@ -9,13 +13,14 @@ pub trait Scheduler {
 
     fn process_idle(&self, prio: u8);
     fn process_stop(&self, prio: u8);
-    fn process_sleep(&mut self, prio: u8, ticks: Ticks);
+    fn process_sleep(&self, prio: u8, ticks: Ticks);
 
-    fn inc_system_ticks(&mut self) -> IncToken;
-    fn run_next(&self, _token: IncToken);
+    fn inc_system_ticks(&self) -> IncToken;
+    fn run_next(&mut self, _token: IncToken) -> !;
     fn add_process(&mut self, process: PCB) -> Result<(), ()>;
     fn remove_process(&mut self, prio: u8) -> Result<(), ()>;
 }
+
 
 #[derive(Clone)]
 pub struct BooleanVector {
@@ -43,30 +48,21 @@ impl BooleanVector {
         self.vec.set(vec);
     }
 
-    pub fn get(&self) -> usize {
+    pub fn value(&self) -> usize {
         self.vec.get()
     }
 }
 
-impl From<usize> for BooleanVector {
-    fn from(vec: usize) -> Self {
+impl core::ops::BitOr for BooleanVector {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
         Self {
-            vec: Cell::new(vec),
+            vec: Cell::new(self.value() | rhs.value())
         }
     }
 }
 
-impl From<BooleanVector> for usize {
-    fn from(bv: BooleanVector) -> Self {
-        bv.vec.get()
-    }
-}
-
-impl From<&BooleanVector> for usize {
-    fn from(bv: &BooleanVector) -> Self {
-        bv.vec.get()
-    }
-}
 
 /// La struttura tiene insieme i processi e i loro stati correlati
 /// In questo modo ho creato un pezzetto dello scheduler.
@@ -74,8 +70,10 @@ impl From<&BooleanVector> for usize {
 /// ma lo scheduler sì, tramite questa struttura.
 struct ProcessList {
     processes: [Option<PCB>; 32],
-    active: BooleanVector,
+    running: BooleanVector,
+    idling: BooleanVector,
     sleeping: BooleanVector,
+    stopped: BooleanVector,
 }
 
 impl ProcessList {
@@ -85,23 +83,28 @@ impl ProcessList {
     pub const fn new() -> Self {
         Self {
             processes: [Self::NONE; 32],
-            active: BooleanVector::new(),
+            running: BooleanVector::new(),
+            idling: BooleanVector::new(),
             sleeping: BooleanVector::new(),
+            stopped: BooleanVector::new(),
         }
     }
 
     pub fn find_next_ready(&self) -> Option<&PCB> {
-        /* Usando l'istruzione 'clz' in assembly, otteniamo direttamente l'indice del processo
-          con il quale accedere all'array dei PCB. Con una singola istruzione otteniamo immediatamente
-          ciò che ci serve!
-        */
-        let next: BooleanVector = (self.active.get() & !self.sleeping.get()).into();
-        let result = next.find_first_set();
+        /*
+        Il processo che può partire è uno in idle, oppure lo stesso che già sta girando.
+        Tramite un banale OR sommo i bit dei due vettori che rappresentano gli stati
+        suddetti dei processi in lista.
+        Poi cerco il primo ad '1': la sua posizione nel vettore indica l'indirizzo
+        al quale troverò il processo da dare in pasto alla CPU.
+         */
 
-        if let Ok(index) = result {
-            self.processes[index].as_ref()
-        } else {
-            None
+        let runnable = self.running.clone() | self.idling.clone();
+        let next = runnable.find_first_set();
+
+        match next {
+            Ok(prio) => self.processes[prio].as_ref(),
+            Err(_) => None,
         }
     }
 
@@ -123,21 +126,40 @@ impl ProcessList {
     }
 
     pub fn set_idle(&self, prio: u8) {
-        self.active.set(prio);
+        self.idling.set(prio);
+
+        self.stopped.clear(prio);
         self.sleeping.clear(prio);
+        self.running.clear(prio);
     }
 
-    pub fn set_stopped(&self, prio: u8) {
-        self.active.clear(prio);
+    pub fn set_stop(&self, prio: u8) {
+        self.stopped.set(prio);
+
+        self.idling.clear(prio);
         self.sleeping.clear(prio);
+        self.running.clear(prio);
     }
 
     pub fn set_sleeping(&self, prio: u8) {
         self.sleeping.set(prio);
+
+        self.idling.clear(prio);
+        self.stopped.clear(prio);
+        self.running.clear(prio);
     }
 
     pub fn get_process_ref(&self, prio: usize) -> Option<&PCB> {
         self.processes[prio].as_ref()
+    }
+
+    /// Looppa su tutti gli indirizzi della lista, lanciando la funzione f su tutti gli elementi.
+    pub fn foreach(&self, f: impl Fn(&PCB)) {
+        for index in 0..=31usize {
+            if let Some(pcb) = &self.processes[index] {
+                f(pcb);
+            }
+        }
     }
 }
 
@@ -153,7 +175,6 @@ pub struct Preemptive {
     /* !!! --------------------- !!! */
     list: ProcessList,
     ticks: Ticks,
-    running: Option<*const PCB>,
 }
 
 unsafe impl Sync for Preemptive {}
@@ -168,7 +189,6 @@ impl Preemptive {
             next_stack_ptr: StackPointer::new(),
             list: ProcessList::new(),
             ticks: Ticks::new(0),
-            running: None,
         }
     }
 }
@@ -183,31 +203,50 @@ impl Scheduler for Preemptive {
     }
 
     fn process_stop(&self, prio: u8) {
-        if let Some(pcb) = self.list.processes[prio as usize].as_ref() {
-            self.list.active.clear(pcb.prio());
+        if let Some(pcb) = self.list.get_process_ref(prio as usize) {
+            self.list.idling.clear(pcb.prio());
             self.list.sleeping.clear(pcb.prio());
         }
     }
 
-    fn process_sleep(&mut self, prio: u8, ticks: Ticks) {
-        if let Some(pcb) = self.list.processes[prio as usize].as_mut() {
-            pcb.sleep = ticks;
-            self.list.sleeping.set(pcb.prio());
+    /// I ticks di sleeping di un task non rappresentano i tick rimanenti alla scadenza,
+    /// ma il valore assoluto che il sistema deve raggiungere per riattivare il processo.
+    /// Questo elimina tutte le operazioni di sottrazione a tutti i contatori dei ticks di
+    /// tutti i processi.
+    fn process_sleep(&self, prio: u8, ticks: Ticks) {
+        if let Some(pcb) = self.list.get_process_ref(prio as usize) {
+            pcb.set_ticks(ticks + self.ticks.clone());
+            self.list.set_sleeping(prio);
         }
     }
 
-    fn inc_system_ticks(&mut self) -> IncToken {
+    fn inc_system_ticks(&self) -> IncToken {
         self.ticks.increment();
-        for opt_pcb in self.list.processes.iter() {
-            if let Some(pcb) = opt_pcb {}
-        }
+        
+        // Settiamo come idle quei task la cui soglia di ticks è
+        // stata superata dal conteggio dei ticks del sistema
+        self.list.foreach( 
+            |pcb| if pcb.get_ticks() == self.ticks {
+                self.list.set_idle(pcb.prio());
+            }
+        );
+
         IncToken
     }
 
     /// Questa funzione è eseguita nell'interrupt SysTick, per ricercare il prossimo task da avviare.
     /// Al termine, la funzione triggera l'interrupt di PendSV, dove avviene lo switch.
-    fn run_next(&self, _token: IncToken) {
-        todo!();
+    fn run_next(&mut self, _token: IncToken) -> ! {
+        if let Some(pcb) = self.list.find_next_ready() {
+            self.next_stack_ptr = pcb.stack_pointer();
+        } else {
+            self.next_stack_ptr = 0.into();
+        }
+
+        unsafe {
+            SystemCall(SysCallType::ContextSwitch);
+            unreachable();
+        }
     }
 
     fn add_process(&mut self, process: PCB) -> Result<(), ()> {
@@ -219,4 +258,5 @@ impl Scheduler for Preemptive {
         self.list.remove(prio)?;
         Ok(())
     }
+
 }

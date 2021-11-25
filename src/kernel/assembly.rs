@@ -1,3 +1,12 @@
+#[link_section = ".static_kernel_variables"]
+extern "C" {
+    static ld_data_start: u32;
+    static ld_data_end: u32;
+    static ld_data: u32;
+    static ld_bss_start: u32;
+    static ld_bss_end: u32;
+}
+
 #[naked]
 #[no_mangle]
 #[link_section = ".os_entry"]
@@ -37,7 +46,7 @@ pub unsafe extern "C" fn __ENTRY() {
 
 impl crate::kernel::scheduler::BooleanVector {
     pub fn find_first_set(&self) -> Result<usize, ()> {
-        let vec: usize = self.into();
+        let vec: usize = self.value();
         let res: usize;
         unsafe {
             asm!(
@@ -46,7 +55,7 @@ impl crate::kernel::scheduler::BooleanVector {
                 out(reg) res,
             );
         }
-        if res < 32 {
+        if res <= 31 {
             Ok(res)
         } else {
             Err(())
@@ -54,7 +63,10 @@ impl crate::kernel::scheduler::BooleanVector {
     }
 }
 
+/// Usato nella funzione successiva di PendSV
 use crate::kernel::scheduler::SCHEDULER;
+use crate::kernel::SysCallType;
+
 
 #[naked]
 #[no_mangle]
@@ -78,9 +90,9 @@ pub unsafe extern "C" fn PendSV() {
         /* Check per determinare se c'è un nuovo processo da caricare */
         "ldr    r0, [r1, #4]",
         // Viene comparato a 0 perché è lo scheduler che azzera il puntatore, nel caso non ci sia un task pronto
-        //"cmp    r0, #0",
         // Se non ci sono task da caricare, la CPU viene messa in sleep
-        "beq     sleep_cpu",
+        //"cmp    r0, #0",
+        //"beq     sleep_cpu",
         /* Caricamento del nuovo contesto */
         // 1. Load Multiple usando l'indirizzo puntato da r0. Modifica il valore di r0
         // 2. Carico il valore di r0 nella variabile "next" dello Scheduler
@@ -108,11 +120,17 @@ extern "C" fn sleep_cpu() {
     }
 }
 
-#[naked]
 #[no_mangle]
-pub unsafe extern "C" fn SVCall() {
-    asm!("svc   0", options(noreturn));
+pub extern "C" fn SVCall() {
+    cortex_m::peripheral::SCB::set_pendsv();
 }
+
+pub fn SystemCall(sysType: SysCallType) {
+    match sysType {
+        SysCallType::ContextSwitch => unsafe { asm!("svc   0") },
+    }
+}
+
 
 #[naked]
 #[no_mangle]

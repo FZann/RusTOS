@@ -3,7 +3,6 @@ use crate::kernel::scheduler::SCHEDULER;
 
 use super::scheduler::Scheduler;
 
-
 #[doc(hidden)]
 #[derive(Clone, Copy)]
 pub union Vector {
@@ -13,9 +12,13 @@ pub union Vector {
 
 #[no_mangle]
 #[link_section = ".vector_table_arm_vectors"]
-static __ARM_VECTORS: [Vector; 14] = [
-    // Exception 2: Non Maskable Interrupt.
+static __ARM_VECTORS: [Vector; 15] = [
+    // Exception 1: Reset Vector
     Vector { handler: __ENTRY },
+    // Exception 2: Non Maskable Interrupt.
+    Vector {
+        handler: NonMaskableInt,
+    },
     // Exception 3: Hard Fault Interrupt.
     Vector {
         handler: HardFaultTrampoline,
@@ -71,9 +74,8 @@ static __ARM_VECTORS: [Vector; 14] = [
 #[link_section = ".vector_table_interrupts"]
 static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
 
-
-
-
+#[no_mangle]
+pub extern "C" fn NonMaskableInt() {}
 
 #[no_mangle]
 pub extern "C" fn DebugMonitor() {}
@@ -92,9 +94,7 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    let sched = unsafe  { &mut SCHEDULER };
+    let sched = unsafe { &mut SCHEDULER };
     let token = sched.inc_system_ticks();
     sched.run_next(token);
 }
-
-
