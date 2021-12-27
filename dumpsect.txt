@@ -1,0 +1,154 @@
+warning: unused import: `crate::kernel::scheduler::SCHEDULER`
+  --> src/kernel/assembly.rs:72:5
+   |
+72 | use crate::kernel::scheduler::SCHEDULER;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `super::vectors::SysTick`
+  --> src/kernel/assembly.rs:75:5
+   |
+75 | use super::vectors::SysTick;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: attribute should be applied to a function or static
+ --> src/kernel/assembly.rs:1:1
+  |
+1 |   #[link_section = ".static_kernel_variables"]
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 | / extern "C" {
+3 | |     static ld_data_start: u32;
+4 | |     static ld_data_end: u32;
+5 | |     static ld_data: u32;
+6 | |     static ld_bss_start: u32;
+7 | |     static ld_bss_end: u32;
+8 | | }
+  | |_- not a function or static
+  |
+  = note: `#[warn(unused_attributes)]` on by default
+  = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+
+warning: field is never read: `stack`
+  --> src/kernel/processes.rs:77:5
+   |
+77 |     stack: &'static mut [usize],
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: associated function is never used: `set_stop`
+   --> src/kernel/scheduler.rs:134:12
+    |
+134 |     pub fn set_stop(&self, prio: u8) {
+    |            ^^^^^^^^
+
+warning: crate `RusTOS` should have a snake case name
+  |
+  = note: `#[warn(non_snake_case)]` on by default
+  = help: convert the identifier to snake case: `rus_tos`
+
+warning: function `SystemCall` should have a snake case name
+   --> src/kernel/assembly.rs:169:8
+    |
+169 | pub fn SystemCall(sysType: SysCallType) {
+    |        ^^^^^^^^^^ help: convert the identifier to snake case: `system_call`
+
+warning: variable `sysType` should have a snake case name
+   --> src/kernel/assembly.rs:169:19
+    |
+169 | pub fn SystemCall(sysType: SysCallType) {
+    |                   ^^^^^^^ help: convert the identifier to snake case: `sys_type`
+
+warning: 8 warnings emitted
+
+warning: unused import: `panic_handler`
+ --> src/bin.rs:6:14
+  |
+6 | use RusTOS::{panic_handler, ExceptionFrame};
+  |              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: variable `c` is assigned to, but never used
+  --> src/bin.rs:31:13
+   |
+31 |     let mut c = 0u32;
+   |             ^
+   |
+   = note: `#[warn(unused_variables)]` on by default
+   = note: consider using `_c` instead
+
+warning: variable `c` is assigned to, but never used
+  --> src/bin.rs:38:13
+   |
+38 |     let mut c = 0u32;
+   |             ^
+   |
+   = note: consider using `_c` instead
+
+warning: unused variable: `frame`
+  --> src/bin.rs:49:23
+   |
+49 | extern "C" fn OSFault(frame: &ExceptionFrame) -> ! {
+   |                       ^^^^^ help: if this is intentional, prefix it with an underscore: `_frame`
+
+warning: function is never used: `bello`
+  --> src/bin.rs:37:4
+   |
+37 | fn bello() -> ! {
+   |    ^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: crate `RusTOS` should have a snake case name
+  |
+  = note: `#[warn(non_snake_case)]` on by default
+  = help: convert the identifier to snake case: `rus_tos`
+
+warning: unused return value of `ptr::mut_ptr::<impl *mut T>::add` that must be used
+  --> src/bin.rs:18:13
+   |
+18 |             p.add(1);
+   |             ^^^^^^^^^
+   |
+   = note: `#[warn(unused_must_use)]` on by default
+   = note: returns a new pointer rather than modifying its argument
+
+warning: unused `Result` that must be used
+  --> src/bin.rs:24:9
+   |
+24 |         SCHEDULER.add_process(pcb);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+
+warning: 8 warnings emitted
+
+
+RusTOS:	file format elf32-littlearm
+
+Sections:
+Idx Name            Size     VMA      LMA      Type
+  0                 00000000 00000000 00000000 
+  1 .vector_table   00000400 08000000 08000000 DATA
+  2 .text           00000380 08000400 08000400 TEXT
+  3 .rodata         00000000 08000780 08000780 TEXT
+  4 .data           00000400 20000000 08000780 DATA
+  5 .bss            0000031c 20000400 20000400 BSS
+  6 .uninit         00000000 2000071c 2000071c BSS
+  7 .debug_loc      00000697 00000000 00000000 DEBUG
+  8 .debug_abbrev   000003d9 00000000 00000000 DEBUG
+  9 .debug_info     000018a3 00000000 00000000 DEBUG
+ 10 .debug_aranges  000000c0 00000000 00000000 DEBUG
+ 11 .debug_ranges   000005a8 00000000 00000000 DEBUG
+ 12 .debug_str      00001797 00000000 00000000 DEBUG
+ 13 .debug_pubnames 00000517 00000000 00000000 DEBUG
+ 14 .debug_pubtypes 00000627 00000000 00000000 DEBUG
+ 15 .ARM.attributes 0000003a 00000000 00000000 
+ 16 .debug_frame    00000204 00000000 00000000 DEBUG
+ 17 .debug_line     0000076a 00000000 00000000 DEBUG
+ 18 .comment        00000013 00000000 00000000 
+ 19 .symtab         000003a0 00000000 00000000 
+ 20 .shstrtab       000000e9 00000000 00000000 
+ 21 .strtab         00000579 00000000 00000000 

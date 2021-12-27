@@ -1,26 +1,24 @@
-use crate::kernel::processes::{Process, StackPointer, Ticks, PCB};
-use core::{cell::Cell, intrinsics::unreachable};
-use crate::kernel::assembly::SystemCall;
+use crate::kernel::processes::{Process, PCB};
+use crate::kernel::Ticks;
+use core::cell::Cell;
 
 use super::SysCallType;
-
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
 
 pub trait Scheduler {
-    fn start(&self) -> !;
+    fn start(&mut self) -> !;
 
     fn process_idle(&self, prio: u8);
     fn process_stop(&self, prio: u8);
     fn process_sleep(&self, prio: u8, ticks: Ticks);
 
-    fn inc_system_ticks(&self) -> IncToken;
-    fn run_next(&mut self, _token: IncToken) -> !;
+    fn inc_system_ticks(&self);
+    fn run_next(&self);
     fn add_process(&mut self, process: PCB) -> Result<(), ()>;
     fn remove_process(&mut self, prio: u8) -> Result<(), ()>;
 }
-
 
 #[derive(Clone)]
 pub struct BooleanVector {
@@ -58,11 +56,10 @@ impl core::ops::BitOr for BooleanVector {
 
     fn bitor(self, rhs: Self) -> Self::Output {
         Self {
-            vec: Cell::new(self.value() | rhs.value())
+            vec: Cell::new(self.value() | rhs.value()),
         }
     }
 }
-
 
 /// La struttura tiene insieme i processi e i loro stati correlati
 /// In questo modo ho creato un pezzetto dello scheduler.
@@ -115,6 +112,7 @@ impl ProcessList {
             Some(_) => Err(()),
             None => {
                 self.processes[prio] = Some(process);
+                self.idling.set(prio as u8);
                 Ok(())
             }
         }
@@ -170,23 +168,22 @@ impl ProcessList {
 pub struct Preemptive {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    running_stack_ptr: StackPointer,
-    next_stack_ptr: StackPointer,
+    pub(crate) process_running: Cell<Option<*const PCB>>,
+    pub(crate) process_next: Cell<Option<*const PCB>>,
     /* !!! --------------------- !!! */
+    pub(crate) sys_call: SysCallType,
     list: ProcessList,
     ticks: Ticks,
 }
 
 unsafe impl Sync for Preemptive {}
 
-/// Il suo scopo è quello di forzare un inc_system_ticks prima di chiamare run_next
-pub struct IncToken;
-
 impl Preemptive {
     pub const fn new() -> Self {
         Self {
-            running_stack_ptr: StackPointer::new(),
-            next_stack_ptr: StackPointer::new(),
+            process_running: Cell::new(None),
+            process_next: Cell::new(None),
+            sys_call: SysCallType::Nop,
             list: ProcessList::new(),
             ticks: Ticks::new(0),
         }
@@ -194,18 +191,30 @@ impl Preemptive {
 }
 
 impl Scheduler for Preemptive {
-    fn start(&self) -> ! {
-        loop {}
+    fn start(&mut self) -> ! {
+        /* Scheduling first process */
+        if let Some(pcb) = self.list.find_next_ready() {
+            /* Qui si DEVE entrare */
+            self.process_running.set(Some(pcb));
+        }
+        unsafe {
+            crate::kernel::assembly::load_first_process();
+            /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo
+            dello scheduler */
+        }
     }
 
     fn process_idle(&self, prio: u8) {
-        self.list.set_idle(prio);
+        if let Some(_) = self.list.get_process_ref(prio as usize) {
+            self.list.set_idle(prio);
+            self.run_next();
+        }
     }
 
     fn process_stop(&self, prio: u8) {
-        if let Some(pcb) = self.list.get_process_ref(prio as usize) {
-            self.list.idling.clear(pcb.prio());
-            self.list.sleeping.clear(pcb.prio());
+        if let Some(_) = self.list.get_process_ref(prio as usize) {
+            self.list.set_stop(prio);
+            self.run_next();
         }
     }
 
@@ -217,35 +226,30 @@ impl Scheduler for Preemptive {
         if let Some(pcb) = self.list.get_process_ref(prio as usize) {
             pcb.set_ticks(ticks + self.ticks.clone());
             self.list.set_sleeping(prio);
+            self.run_next();
         }
     }
 
-    fn inc_system_ticks(&self) -> IncToken {
+    fn inc_system_ticks(&self) {
         self.ticks.increment();
-        
+
         // Settiamo come idle quei task la cui soglia di ticks è
         // stata superata dal conteggio dei ticks del sistema
-        self.list.foreach( 
-            |pcb| if pcb.get_ticks() == self.ticks {
+        self.list.foreach(|pcb| {
+            if pcb.get_ticks() == self.ticks {
                 self.list.set_idle(pcb.prio());
             }
-        );
-
-        IncToken
+        });
     }
 
     /// Questa funzione è eseguita nell'interrupt SysTick, per ricercare il prossimo task da avviare.
     /// Al termine, la funzione triggera l'interrupt di PendSV, dove avviene lo switch.
-    fn run_next(&mut self, _token: IncToken) -> ! {
+    fn run_next(&self) {
         if let Some(pcb) = self.list.find_next_ready() {
-            self.next_stack_ptr = pcb.stack_pointer();
+            self.process_next.set(Some(pcb));
+            cortex_m::peripheral::SCB::set_pendsv();
         } else {
-            self.next_stack_ptr = 0.into();
-        }
-
-        unsafe {
-            SystemCall(SysCallType::ContextSwitch);
-            unreachable();
+            self.process_next.set(None);
         }
     }
 
@@ -258,5 +262,4 @@ impl Scheduler for Preemptive {
         self.list.remove(prio)?;
         Ok(())
     }
-
 }

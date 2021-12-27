@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(asm)]
 #![feature(naked_functions)]
-#![feature(core_intrinsics)]
 
 use core::panic::PanicInfo;
 

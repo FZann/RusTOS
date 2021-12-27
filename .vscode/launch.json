@@ -5,12 +5,34 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
+            /* Configuration for the STM32G474 Nucleo board */
+            "type": "cortex-debug",
             "request": "launch",
-            "name": "Debug",
-            "program": "${workspaceFolder}/<your program>",
-            "args": [],
-            "cwd": "${workspaceFolder}"
+            "name": "Debug (OpenOCD)",
+            "servertype": "openocd",
+            "cwd": "${workspaceRoot}",
+            "preLaunchTask": "Cargo Build (debug)",
+            "runToMain": true,
+            "executable": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+            /* Run `cargo build --example itm` and uncomment this line to run itm example */
+            // "executable": "./target/thumbv7em-none-eabihf/debug/examples/itm",
+            "device": "STM32G474RET6",
+            "configFiles": [
+                /*"interface/stlink-v2-1.cfg",*/
+                "interface/stlink.cfg",
+                "target/stm32g4x.cfg"
+            ],
+            "svdFile": "${workspaceRoot}/.vscode/STM32G474xx.svd",
+            "swoConfig": {
+                "enabled": true,
+                "cpuFrequency": 8000000,
+                "swoFrequency": 2000000,
+                "source": "probe",
+                "decoders": [
+                    { "type": "console", "label": "ITM", "port": 0 }
+                ]
+            }
         }
     ]
 }
+

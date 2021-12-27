@@ -2,7 +2,8 @@ MEMORY
 {
     /* NOTE 1 K = 1 KiBi = 1024 bytes */
     FLASH :   ORIGIN = 0x08000000, LENGTH = 256K
-    RAM   :   ORIGIN = 0x20000000, LENGTH = 64K
+    RAM   :   ORIGIN = 0x20000000, LENGTH = 60K
+    STACK :   ORIGIN = 0x2000F000, LENGTH = 4K
 }
 
 EXTERN(__ENTRY);
@@ -14,14 +15,16 @@ ENTRY(__ENTRY);
 
 SECTIONS 
 {
+    __stack_start = ORIGIN(STACK) + SIZEOF(STACK);
+
     .vector_table : AT(ORIGIN(FLASH)) {
         LONG(__stack_start);
-        *(.vector_table_arm_vectors)
-        *(.vector_table_interrupts)
-        *(.static_kernel_variables)
+        KEEP(*(.vector_table_arm_vectors));
+        KEEP(*(.vector_table_interrupts));
+        KEEP(*(.static_kernel_variables));
     } > FLASH 
 
-    PROVIDE(__vector_end = ADDR(.vector_table) + SIZEOF(.vector_table));
+    __vector_end = ADDR(.vector_table) + SIZEOF(.vector_table);
 
     .text : AT(__vector_end) {
         . = ALIGN(4);
@@ -33,32 +36,37 @@ SECTIONS
     } > FLASH
 
     .rodata : {
-        . = ALIGN(4);
         *(.rodata .rodata.*);
+        . = ALIGN(4);
+        __end_flash = .;
     } > FLASH
 
     /* usato per caricare i dati inizializzati */
-    ld_data = LOADADDR(.data);
-    .data : {
+    .data : ALIGN(4) {
         . = ALIGN(4);
-        ld_data_start = . ;
+        PROVIDE(ld_data_start = . );
         *(.data*)
         . = ALIGN(4);
-    ld_data_end = . ;
+        PROVIDE(ld_data_end = . );
     } > RAM AT > FLASH
+    PROVIDE(ld_data = LOADADDR(.data));
 
     .bss (NOLOAD) : {
         . = ALIGN(4);
-        ld_bss_start = . ;
+        PROVIDE(ld_bss_start = . );
         *(.bss*)
-        ld_bss_end = . ;
+        PROVIDE(ld_bss_end = . );
         . = ALIGN(4);
         } > RAM
 
-        __stack_start = ORIGIN(RAM) + SIZEOF(RAM) - 0x200;
-
-        .stack : AT(__stack_start) {
-        . = ALIGN(8);
+    /* ### .uninit */
+    .uninit (NOLOAD) : ALIGN(4)
+    {
+        . = ALIGN(4);
+        /* __suninit = .; */
+        *(.uninit .uninit.*);
+        . = ALIGN(4); 
+        /* __euninit = .; */
     } > RAM
 
 
@@ -68,9 +76,6 @@ SECTIONS
         *(.ARM.exidx);
         *(.ARM.exidx.*);
         *(.ARM.extab.*);
-        *(.gnu.sgstubs*)
-        *(.glue_7t) *(.glue_7)
-        *(.got .got.*)
     }
 
 }

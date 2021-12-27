@@ -1,0 +1,1 @@
+[{"node":"GPIOA.BSRR","expanded":true,"format":0},{"node":"RCC","expanded":true,"format":0,"pinned":false},{"node":"RCC.AHB2ENR","expanded":true,"format":0},{"node":"SCB.ICSR","expanded":true,"format":0}]

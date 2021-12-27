@@ -1,4 +1,5 @@
-use core::cell::Cell;
+use crate::kernel::Ticks;
+use crate::kernel::{SysCallType, SystemCall};
 
 /// Wrapper per avere la type-safety.
 #[derive(Clone, Copy)]
@@ -40,43 +41,10 @@ impl From<TaskHandle> for usize {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct Ticks(Cell<usize>);
-
-impl Ticks {
-    pub const fn new(ticks: usize) -> Self {
-        Ticks(Cell::new(ticks))
-    }
-
-    pub fn increment(&self) {
-        self.0.set(self.0.get() + 1);
-    }
-
-    pub fn decrement(&self) {
-        self.0.set(self.0.get() - 1);
-    }
-
-    pub fn set(&self, ticks: usize) {
-        self.0.set(ticks);
-    }
-
-    pub fn value(&self) -> usize {
-        self.0.get()
-    }
-}
-
-impl core::ops::Add for Ticks {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.0.get() + rhs.0.get())
-    }
-}
-
-
+#[repr(C)]
 pub struct Stack {
-    stack: &'static mut [usize],
     sp: StackPointer,
+    stack: &'static mut [usize],
 }
 
 impl Stack {
@@ -137,6 +105,18 @@ pub trait Process {
 
     fn set_ticks(&self, ticks: Ticks);
     fn get_ticks(&self) -> Ticks;
+
+    fn idle() {
+        SystemCall(SysCallType::ProcessIdle);
+    }
+
+    fn sleep(ticks: Ticks) {
+        SystemCall(SysCallType::ProcessSleep(ticks));
+    }
+
+    fn stop() {
+        SystemCall(SysCallType::ProcessStop);
+    }
 }
 
 /// **PCB**

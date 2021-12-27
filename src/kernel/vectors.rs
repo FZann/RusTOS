@@ -2,6 +2,7 @@ use crate::kernel::assembly::{HardFaultTrampoline, PendSV, SVCall, __ENTRY};
 use crate::kernel::scheduler::SCHEDULER;
 
 use super::scheduler::Scheduler;
+use super::SysCallType;
 
 #[doc(hidden)]
 #[derive(Clone, Copy)]
@@ -95,6 +96,6 @@ pub extern "C" fn SecureFault() {}
 #[no_mangle]
 pub extern "C" fn SysTick() {
     let sched = unsafe { &mut SCHEDULER };
-    let token = sched.inc_system_ticks();
-    sched.run_next(token);
+    sched.inc_system_ticks();
+    sched.run_next();
 }
