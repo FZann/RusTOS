@@ -12,17 +12,18 @@
             "servertype": "openocd",
             "cwd": "${workspaceRoot}",
             "preLaunchTask": "Cargo Build (debug)",
-            "runToMain": true,
+            //"runToMain": true,
+            "runToEntryPoint": "__ENTRY",
             "executable": "./target/thumbv7em-none-eabihf/debug/RusTOS",
             /* Run `cargo build --example itm` and uncomment this line to run itm example */
             // "executable": "./target/thumbv7em-none-eabihf/debug/examples/itm",
-            "device": "STM32G474RET6",
+            "device": "STM32F334R8T6",
             "configFiles": [
-                /*"interface/stlink-v2-1.cfg",*/
                 "interface/stlink.cfg",
-                "target/stm32g4x.cfg"
+                "target/stm32f3x.cfg"
             ],
-            "svdFile": "${workspaceRoot}/.vscode/STM32G474xx.svd",
+            "showDevDebugOutput": "raw",
+            "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd",
             "swoConfig": {
                 "enabled": true,
                 "cpuFrequency": 8000000,
@@ -35,4 +36,3 @@
         }
     ]
 }
-

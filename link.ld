@@ -1,9 +1,11 @@
+/* Memoria del chip STM32F334R8T6, usato per lo sviluppo */
 MEMORY
 {
     /* NOTE 1 K = 1 KiBi = 1024 bytes */
-    FLASH :   ORIGIN = 0x08000000, LENGTH = 256K
-    RAM   :   ORIGIN = 0x20000000, LENGTH = 60K
-    STACK :   ORIGIN = 0x2000F000, LENGTH = 4K
+    FLASH   (rx)    : ORIGIN = 0x08000000,   LENGTH = 64K
+    CCMRAM  (xrw)   : ORIGIN = 0x10000000,   LENGTH = 4K
+    RAM     (xrw)   : ORIGIN = 0x20000000,   LENGTH = 10K
+    STACK   (xrw)   : ORIGIN = 0x20003000,   LENGTH = 2K
 }
 
 EXTERN(__ENTRY);
@@ -23,6 +25,7 @@ SECTIONS
         KEEP(*(.vector_table_interrupts));
         KEEP(*(.static_kernel_variables));
     } > FLASH 
+    PROVIDE(ld_stack_start = __stack_start);
 
     __vector_end = ADDR(.vector_table) + SIZEOF(.vector_table);
 
@@ -57,7 +60,7 @@ SECTIONS
         *(.bss*)
         PROVIDE(ld_bss_end = . );
         . = ALIGN(4);
-        } > RAM
+    } > RAM
 
     /* ### .uninit */
     .uninit (NOLOAD) : ALIGN(4)

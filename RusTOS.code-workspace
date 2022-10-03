@@ -2,10 +2,14 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"name": "harsark.rs",
+			"path": "../harsark.rs"
 		}
 	],
 	"settings": {
 		"cortex-debug.registerUseNaturalFormat": false,
-		"cortex-debug.variableUseNaturalFormat": false
+		"cortex-debug.variableUseNaturalFormat": true
 	}
 }

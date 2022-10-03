@@ -1,4 +1,27 @@
+use crate::kernel::processes::Process;
+use crate::kernel::scheduler::{Scheduler, SCHEDULER};
+use crate::kernel::{BooleanVector, SysCallType};
+use core::arch::asm;
+
+/// Stack frame hardware salvata dai Cortex-M
+/// Permette di visualizzare i valori dei registri durante l'ultimo errore
+#[repr(C)]
+pub struct ExceptionFrame {
+    r0: u32,
+    r1: u32,
+    r2: u32,
+    r3: u32,
+    r12: u32,
+    lr: u32,
+    pc: u32,
+    xpsr: u32,
+}
+
+/*
+#[allow(dead_code)]
 extern "C" {
+    //#[link_section = ".static_kernel_variables"]
+    //static ld_stack_start: u32;
     #[link_section = ".static_kernel_variables"]
     static ld_data_start: u32;
     #[link_section = ".static_kernel_variables"]
@@ -9,6 +32,103 @@ extern "C" {
     static ld_bss_start: u32;
     #[link_section = ".static_kernel_variables"]
     static ld_bss_end: u32;
+}
+*/
+
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub union Vector {
+    handler: unsafe extern "C" fn(),
+    reserved: usize,
+}
+
+#[no_mangle]
+#[link_section = ".vector_table_arm_vectors"]
+static __ARM_VECTORS: [Vector; 15] = [
+    // Exception 1: Reset Vector
+    Vector { handler: __ENTRY },
+    // Exception 2: Non Maskable Interrupt
+    Vector {
+        handler: NonMaskableInt,
+    },
+    // Exception 3: Hard Fault Interrupt.
+    Vector {
+        handler: HardFaultTrampoline,
+    },
+    // Exception 4: Memory Management Interrupt [not on Cortex-M0 variants].
+    #[cfg(not(armv6m))]
+    Vector {
+        handler: MemoryManagement,
+    },
+    #[cfg(armv6m)]
+    Vector { reserved: 0 },
+    // Exception 5: Bus Fault Interrupt [not on Cortex-M0 variants].
+    #[cfg(not(armv6m))]
+    Vector { handler: BusFault },
+    #[cfg(armv6m)]
+    Vector { reserved: 0 },
+    // Exception 6: Usage Fault Interrupt [not on Cortex-M0 variants].
+    #[cfg(not(armv6m))]
+    Vector {
+        handler: UsageFault,
+    },
+    #[cfg(armv6m)]
+    Vector { reserved: 0 },
+    // Exception 7: Secure Fault Interrupt [only on Armv8-M].
+    #[cfg(armv8m)]
+    Vector {
+        handler: SecureFault,
+    },
+    #[cfg(not(armv8m))]
+    Vector { reserved: 0 },
+    // 8-10: Reserved
+    Vector { reserved: 0 },
+    Vector { reserved: 0 },
+    Vector { reserved: 0 },
+    // Exception 11: SV Call Interrupt.
+    Vector { handler: SVCall },
+    // Exception 12: Debug Monitor Interrupt [not on Cortex-M0 variants].
+    #[cfg(not(armv6m))]
+    Vector {
+        handler: DebugMonitor,
+    },
+    #[cfg(armv6m)]
+    Vector { reserved: 0 },
+    // 13: Reserved
+    Vector { reserved: 0 },
+    // Exception 14: Pend SV Interrupt [not on Cortex-M0 variants].
+    Vector { handler: PendSV },
+    // Exception 15: System Tick Interrupt.
+    Vector { handler: SysTick },
+];
+
+#[no_mangle]
+#[link_section = ".vector_table_interrupts"]
+static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
+
+#[no_mangle]
+pub extern "C" fn NonMaskableInt() {}
+
+#[no_mangle]
+pub extern "C" fn DebugMonitor() {}
+
+#[no_mangle]
+pub extern "C" fn UsageFault() {}
+
+#[no_mangle]
+pub extern "C" fn BusFault() {}
+
+#[no_mangle]
+pub extern "C" fn MemoryManagement() {}
+
+#[no_mangle]
+pub extern "C" fn SecureFault() {}
+
+#[no_mangle]
+pub extern "C" fn SysTick() {
+    let sched = unsafe { &mut SCHEDULER };
+    sched.inc_system_ticks();
+    sched.run_next();
 }
 
 #[naked]
@@ -42,13 +162,18 @@ pub unsafe extern "C" fn __ENTRY() {
         "3:",
         "cmp    r2, r4",
         "bcc    2b",
-        /* Call the application's entry point.*/
+        /* Set the stack and call the application's entry point.*/
+        //"ldr    r0, =ld_stack_start",
+        //"mrs    r0, msp",
         "b	    OSEntry",
         options(noreturn)
     );
 }
 
-impl crate::kernel::scheduler::BooleanVector {
+impl BooleanVector {
+    /// La funzione, in questa architettura, è implementata con l'istruzione
+    /// clz (count leading zeros), rendendo possibile l'individuazione del
+    /// primo task libero con un singolo ciclo macchina.
     pub fn find_first_set(&self) -> Result<usize, ()> {
         let vec: usize = self.value();
         if vec != 0 {
@@ -68,15 +193,6 @@ impl crate::kernel::scheduler::BooleanVector {
     }
 }
 
-/// Usato nella funzione successiva di PendSV
-use crate::kernel::scheduler::SCHEDULER;
-use crate::kernel::SysCallType;
-
-use super::processes::Process;
-use super::scheduler::Scheduler;
-
-use core::arch::asm;
-
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn PendSV() {
@@ -94,16 +210,16 @@ pub unsafe extern "C" fn PendSV() {
         "str	r0, [r2]",        // Save PSP value in &PCB (same as &StackPointer, 'cause of repr(C))
         "isb",
         /* Check per determinare se c'è un nuovo processo da caricare */
-        //"bl     Supervisor",       // <--- Da fare (serve?)
-
+        //"bl     Supervisor",      // <--- Da fare (serve?)
 
         /* Caricamento del nuovo contesto */
         "ldr    r2, [r3, #12]", // Get next &PCB's StackPointer to switch in (#12 due to Option)
         "str    r2, [r3, #4]",  // Save &PCB as running
         // Azzera il "next stack pointer"
         "mov    r1, #0",
-        "str    r1, [r3, #8]",    // Clear next &PCB (seen as None in Rust side)
-        "str    r1, [r3, #12]",   // Clear next &PCB (seen as None in Rust side)
+        "str    r1, [r3, #8]",  // Clear next &PCB (seen as None in Rust side)
+        "str    r1, [r3, #12]", // Clear next &PCB (seen as None in Rust side)
+        // Carica la nuova stack
         "ldr    r0, [r2]",        // Get value of StackPointer
         "ldmfd  r0!, {{r4-r11}}", // Load Context
         "str    r0, [r2]",        // Saves new StackPointer value in &PCB
@@ -147,11 +263,10 @@ pub unsafe extern "C" fn load_first_process() -> ! {
 }
 
 #[no_mangle]
-extern "C" fn sleep_cpu() {
-    loop {
-        unsafe {
-            asm!("wfi");
-        }
+#[inline(always)]
+pub fn sleep_cpu() {
+    unsafe {
+        asm!("wfi");
     }
 }
 
@@ -189,21 +304,23 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    unsafe {
-        match &SCHEDULER.sys_call {
-            SysCallType::Nop => (),
-            SysCallType::StartScheduler => SCHEDULER.start(),
-            SysCallType::ProcessIdle => {
-                let prio = (*SCHEDULER.process_running.get().unwrap()).prio();
-                SCHEDULER.process_idle(prio);
+    let sched = unsafe { &mut SCHEDULER };
+    match sched.sys_call {
+        SysCallType::Nop => (),
+        SysCallType::StartScheduler => sched.start(),
+        SysCallType::ProcessIdle => {
+            if let Some(pcb) = sched.process_running {
+                sched.process_idle(unsafe { (*pcb).prio() });
             }
-            SysCallType::ProcessStop => {
-                let prio = (*SCHEDULER.process_running.get().unwrap()).prio();
-                SCHEDULER.process_stop(prio);
+        }
+        SysCallType::ProcessStop => {
+            if let Some(pcb) = sched.process_running {
+                sched.process_stop(unsafe { (*pcb).prio() });
             }
-            SysCallType::ProcessSleep(ticks) => {
-                let prio = (*SCHEDULER.process_running.get().unwrap()).prio();
-                SCHEDULER.process_sleep(prio, ticks.clone());
+        }
+        SysCallType::ProcessSleep(ticks) => {
+            if let Some(pcb) = sched.process_running {
+                sched.process_sleep(unsafe { (*pcb).prio() }, ticks);
             }
         }
     }

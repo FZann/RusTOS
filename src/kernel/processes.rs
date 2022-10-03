@@ -1,5 +1,7 @@
-use crate::kernel::Ticks;
+use core::cell::Cell;
+
 use crate::kernel::{SysCallType, SystemCall};
+use crate::kernel::{TaskHandle, Ticks};
 
 /// Wrapper per avere la type-safety.
 #[derive(Clone, Copy)]
@@ -26,21 +28,6 @@ impl From<usize> for StackPointer {
 unsafe impl Sync for StackPointer {}
 unsafe impl Send for StackPointer {}
 
-#[derive(Clone, Copy)]
-pub struct TaskHandle(fn() -> !);
-
-impl TaskHandle {
-    pub fn new(task: fn() -> !) -> Self {
-        Self(task)
-    }
-}
-
-impl From<TaskHandle> for usize {
-    fn from(handle: TaskHandle) -> Self {
-        handle.0 as usize
-    }
-}
-
 #[repr(C)]
 pub struct Stack {
     sp: StackPointer,
@@ -58,7 +45,7 @@ impl Stack {
         // Precarichiamo la stack con l'handle del Task
         // Hardware stack
         stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
-        stack[len - 02] = handle.into(); // PC
+        stack[len - 02] = handle as usize; // PC
         stack[len - 03] = 0xFFFFFFFD; // LR
         stack[len - 04] = 0xC; // R12
         stack[len - 05] = 0x3; // R3
@@ -92,6 +79,15 @@ impl Stack {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum ProcessState {
+    Idle,
+    Running,
+    Stopped,
+    Sleeping(Ticks),
+    Waiting,
+}
+
 pub trait Process {
     fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self
     where
@@ -103,17 +99,22 @@ pub trait Process {
     fn stack_pointer(&self) -> StackPointer;
     fn stack_ptr_ref(&self) -> &StackPointer;
 
-    fn set_ticks(&self, ticks: Ticks);
-    fn get_ticks(&self) -> Ticks;
+    fn set_state(&self, state: ProcessState);
+    fn get_state(&self) -> ProcessState;
 
+    fn decrement_ticks(&self);
+
+    #[inline(always)]
     fn idle() {
         SystemCall(SysCallType::ProcessIdle);
     }
 
+    #[inline(always)]
     fn sleep(ticks: Ticks) {
         SystemCall(SysCallType::ProcessSleep(ticks));
     }
 
+    #[inline(always)]
     fn stop() {
         SystemCall(SysCallType::ProcessStop);
     }
@@ -128,12 +129,11 @@ pub trait Process {
 /// Questa tecnica mi permette di risparmiare il decremento
 /// dei tick di sleeping e di effettuare unicamente il check
 /// di verifica con l'if.
-
 pub struct PCB {
     stack: Stack,
     task: TaskHandle,
+    state: Cell<ProcessState>,
     prio: u8,
-    ticks: Ticks,
 }
 
 impl Process for PCB {
@@ -142,7 +142,7 @@ impl Process for PCB {
             task,
             stack: Stack::new(stack, task),
             prio,
-            ticks: Ticks::new(0),
+            state: Cell::new(ProcessState::Idle),
         }
     }
 
@@ -165,11 +165,22 @@ impl Process for PCB {
         self.stack.sp_ref()
     }
 
-    fn set_ticks(&self, ticks: Ticks) {
-        self.ticks.set(ticks.value());
+    fn set_state(&self, state: ProcessState) {
+        self.state.set(state);
     }
 
-    fn get_ticks(&self) -> Ticks {
-        self.ticks.clone()
+    fn get_state(&self) -> ProcessState {
+        self.state.get()
+    }
+
+    fn decrement_ticks(&self) {
+        if let ProcessState::Sleeping(ticks) = self.state.get() {
+            let ticks = ticks - 1;
+            if ticks == 0 {
+                self.state.set(ProcessState::Idle);
+            } else {
+                self.state.set(ProcessState::Sleeping(ticks));
+            }
+        }
     }
 }
