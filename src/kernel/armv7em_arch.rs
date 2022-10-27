@@ -1,3 +1,5 @@
+use cortex_m::peripheral::{Peripherals, self};
+
 use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 use crate::kernel::{BooleanVector, SysCallType};
@@ -307,7 +309,15 @@ pub extern "C" fn SVCall() {
     let sched = unsafe { &mut SCHEDULER };
     match sched.sys_call {
         SysCallType::Nop => (),
-        SysCallType::StartScheduler => sched.start(),
+        SysCallType::StartScheduler => {
+            let mut sys_tick = Peripherals::take().unwrap().SYST;
+            sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
+            let reload = peripheral::SYST::get_ticks_per_10ms();
+            sys_tick.set_reload(reload);
+            sys_tick.enable_interrupt();
+            sys_tick.enable_counter();
+            sched.start();
+        },
         SysCallType::ProcessIdle => {
             if let Some(pcb) = sched.process_running {
                 sched.process_idle(unsafe { (*pcb).prio() });

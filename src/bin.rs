@@ -2,8 +2,6 @@
 #![no_main]
 
 use RusTOS::kernel::semaphores::Semaphore;
-use cortex_m::peripheral::syst::SystClkSource;
-use cortex_m::peripheral::SYST;
 use RusTOS::kernel::processes::{Process, PCB};
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::{sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
@@ -15,13 +13,6 @@ static mut STACK1: [usize; 256] = [0usize; 256];
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
-    let mut sys_tick = cortex_m::peripheral::Peripherals::take().unwrap().SYST;
-    sys_tick.set_clock_source(SystClkSource::Core);
-    let reload = SYST::get_ticks_per_10ms();
-    sys_tick.set_reload(reload);
-    sys_tick.enable_interrupt();
-    sys_tick.enable_counter();
-
     unsafe {
         let idle: PCB = Process::new(idle_task, &mut IDLE_STACK, 0);
         let pcb: PCB = Process::new(ciao, &mut STACK, 1);
@@ -69,7 +60,7 @@ fn bello() -> ! {
             PCB::sleep(500);
             gpioa_out.write(0x20);
             PCB::sleep(500);
-            sem.wait();
+            //sem.wait();
         }
     }
 }

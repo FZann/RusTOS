@@ -22,6 +22,22 @@ pub enum SysCallType {
     ProcessStop,
     StartScheduler,
 }
+
+#[inline(always)]
+pub fn idle() {
+    SystemCall(SysCallType::ProcessIdle);
+}
+
+#[inline(always)]
+pub fn sleep(ticks: Ticks) {
+    SystemCall(SysCallType::ProcessSleep(ticks));
+}
+
+#[inline(always)]
+pub fn stop() {
+    SystemCall(SysCallType::ProcessStop);
+}
+
 #[derive(Clone)]
 pub struct BooleanVector {
     vec: Cell<usize>,
