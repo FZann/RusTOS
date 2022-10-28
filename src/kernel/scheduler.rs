@@ -1,10 +1,10 @@
-use crate::kernel::processes::{Process, PCB, ProcessState};
+use crate::kernel::processes::{Process, ProcessState};
 use crate::kernel::{SysCallType, BitVec, BitVector, Ticks};
 
 #[no_mangle]
-pub static mut SCHEDULER: Preemptive::<PCB> = Preemptive::new();
+pub static mut SCHEDULER: Preemptive = Preemptive::new();
 
-pub trait Scheduler<P: Process> {
+pub trait Scheduler<'p> {
      fn start(&mut self) -> !;
 
     fn process_idle(&mut self, prio: usize);
@@ -13,31 +13,31 @@ pub trait Scheduler<P: Process> {
 
     fn inc_system_ticks(&mut self);
     fn schedule_next(&mut self);
-    fn add_process(&mut self, process: &'static P) -> Result<(), ()>;
+    fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()>;
     fn remove_process(&mut self, prio: usize) -> Result<(), ()>;
 }
 /// Lo Scheduler tiene in memoria anche le variabili che servono per completare
 /// un context switch. In questo modo evito di usare una serie di unsafe per
 /// la modifica dei valori, perché non risultano statici allo scheduler stesso
 #[repr(C)]
-pub struct Preemptive<P: Process + 'static> {
+pub struct Preemptive<'p> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
     // Il fatto di usare Option<&P> implica una dimensione di una singola word dei campi running e next.
     // Questo si deve riflettere nell'assembly, usando i giusti offset.
-    pub(crate) running: Option<&'static P>,
-    pub(crate) next: Option<&'static P>,
+    pub(crate) running: Option<&'p dyn Process>,
+    pub(crate) next: Option<&'p dyn Process>,
     /* !!! --------------------- !!! */
     pub(crate) sys_call: SysCallType,
-    processes: [Option<&'static P>; 32],
+    processes: [Option<&'p dyn Process>; 32],
     schedulable: BitVec,
     ticks: Ticks,
 }
 
-unsafe impl<P: Process> Sync for Preemptive<P> {}
+unsafe impl<'p> Sync for Preemptive<'p> {}
 
-impl<P: Process> Preemptive<P> {
-    const NONE: Option<&P> = None;
+impl<'p> Preemptive<'p> {
+    const NONE: Option<&'p dyn Process> = None;
 
     pub const fn new() -> Self {
         Self {
@@ -52,7 +52,7 @@ impl<P: Process> Preemptive<P> {
 
     /// Looppa su tutti gli indirizzi della lista, lanciando la funzione f su tutti gli elementi non-null.
     /// Con questa implementazione eseguiamo il minor numero possibile di iterazioni.
-    pub fn foreach(&self, f: impl Fn(&P)) {
+    pub fn foreach(&self, f: impl Fn(&dyn Process)) {
         let mut tasks = self.schedulable;
         while let Ok(id) = tasks.first_set() {
             self.processes[id].map(&f);
@@ -61,7 +61,7 @@ impl<P: Process> Preemptive<P> {
     }
 }
 
-impl<P: Process + 'static> Scheduler<P> for Preemptive<P> {
+impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn start(&mut self) -> ! {
         /* Scheduling first process */
         let id = self.schedulable.first_set().unwrap();
@@ -127,7 +127,12 @@ impl<P: Process + 'static> Scheduler<P> for Preemptive<P> {
         }
     }
 
-    fn add_process(&mut self, process: &'static P) -> Result<(), ()> {
+    fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()> {
+        match (process.handle(), process.sp()) {
+            (Some(_), Some(_)) => (),
+            (_, _) => panic!("Processo non setuppato!"),
+        };
+
         let prio = process.prio() as usize;
 
         match self.processes[prio] {

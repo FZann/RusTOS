@@ -10,7 +10,7 @@ pub mod scheduler;
 pub mod semaphores;
 
 pub type Ticks = usize;
-pub type TaskHandle = fn() -> !;
+
 
 #[derive(PartialEq, PartialOrd)]
 pub enum SysCallType {

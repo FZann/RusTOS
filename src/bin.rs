@@ -2,30 +2,27 @@
 #![no_main]
 
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::processes::{Process, PCB};
+use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::{sleep_cpu, ExceptionFrame, SysCallType, SystemCall, sleep};
 
-static mut IDLE_STACK: [usize; 256] = [0; 256];
-static mut STACK: [usize; 256] = [0; 256];
-static mut STACK1: [usize; 256] = [0; 256];
-
-static mut IDLE: Option<PCB> = None;
-static mut CIAO: Option<PCB> = None;
-static mut BELLO: Option<PCB> = None;
+static mut IDLE: Task::<33> = Task::allocate();
+static mut CIAO: Task::<256> = Task::allocate();
+static mut BELLO: Task::<256> = Task::allocate();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        IDLE = Some(PCB::new(idle_task, &mut IDLE_STACK, 0));
-        CIAO = Some(PCB::new(ciao, &mut STACK, 1));
-        BELLO = Some(PCB::new(bello, &mut STACK1, 2));
+
+        IDLE.setup(idle_task, 0);
+        CIAO.setup(ciao, 1);
+        BELLO.setup(bello, 2);
 
 
-        SCHEDULER.add_process(IDLE.as_ref().unwrap());
-        SCHEDULER.add_process(CIAO.as_ref().unwrap());
-        SCHEDULER.add_process(BELLO.as_ref().unwrap());
+        SCHEDULER.add_process(&IDLE);
+        SCHEDULER.add_process(&CIAO);
+        SCHEDULER.add_process(&BELLO);
         SystemCall(SysCallType::StartScheduler);
         unreachable!();
     }
