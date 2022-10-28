@@ -2,7 +2,7 @@ use cortex_m::peripheral::{Peripherals, self};
 
 use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use crate::kernel::{BooleanVector, SysCallType};
+use crate::kernel::SysCallType;
 use core::arch::asm;
 
 /// Stack frame hardware salvata dai Cortex-M
@@ -172,28 +172,7 @@ pub unsafe extern "C" fn __ENTRY() {
     );
 }
 
-impl BooleanVector {
-    /// La funzione, in questa architettura, è implementata con l'istruzione
-    /// clz (count leading zeros), rendendo possibile l'individuazione del
-    /// primo task libero con un singolo ciclo macchina.
-    pub fn find_first_set(&self) -> Result<usize, ()> {
-        let vec: usize = self.value();
-        if vec != 0 {
-            let res: usize;
-            unsafe {
-                asm!(
-                    "clz    {1}, {0}",
-                    in(reg) vec,
-                    out(reg) res,
-                );
-            }
-            // Devo sottrarre per ottenere il valore corretto
-            Ok(31 - res)
-        } else {
-            Err(())
-        }
-    }
-}
+
 
 #[naked]
 #[no_mangle]

@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cortex-m = "0.7.3"
+cortex-m = "0.7.6"
+bitfield = "0.14.0"
 
 [lib]
 name = "RusTOS"

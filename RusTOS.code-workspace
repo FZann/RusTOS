@@ -2,10 +2,6 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"name": "harsark.rs",
-			"path": "../harsark.rs"
 		}
 	],
 	"settings": {

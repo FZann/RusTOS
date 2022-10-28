@@ -1,83 +1,9 @@
 use core::cell::Cell;
 
-use crate::kernel::{SysCallType, SystemCall};
 use crate::kernel::{TaskHandle, Ticks};
 
 /// Wrapper per avere la type-safety.
-#[derive(Clone, Copy)]
-pub struct StackPointer(*const usize);
-
-impl StackPointer {
-    pub const fn new() -> Self {
-        Self(0 as *const usize)
-    }
-}
-
-impl From<*const usize> for StackPointer {
-    fn from(sp: *const usize) -> Self {
-        StackPointer(sp)
-    }
-}
-
-impl From<usize> for StackPointer {
-    fn from(sp: usize) -> Self {
-        StackPointer(sp as *const usize)
-    }
-}
-
-unsafe impl Sync for StackPointer {}
-unsafe impl Send for StackPointer {}
-
-#[repr(C)]
-pub struct Stack {
-    sp: StackPointer,
-    stack: &'static mut [usize],
-}
-
-impl Stack {
-    pub const fn allocate<const LEN: usize>() -> [usize; LEN] {
-        [0usize; LEN]
-    }
-
-    pub fn new(stack: &'static mut [usize], handle: TaskHandle) -> Self {
-        let len = stack.len();
-
-        // Precarichiamo la stack con l'handle del Task
-        // Hardware stack
-        stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
-        stack[len - 02] = handle as usize; // PC
-        stack[len - 03] = 0xFFFFFFFD; // LR
-        stack[len - 04] = 0xC; // R12
-        stack[len - 05] = 0x3; // R3
-        stack[len - 06] = 0x2; // R2
-        stack[len - 07] = 0x1; // R1
-
-        // Software stack
-        stack[len - 09] = 0xB; // R11
-        stack[len - 10] = 0xA; // R10
-        stack[len - 11] = 0x9; // R9
-        stack[len - 12] = 0x8; // R8
-        stack[len - 13] = 0x7; // R7
-        stack[len - 14] = 0x6; // R6
-        stack[len - 15] = 0x5; // R5
-        stack[len - 16] = 0x4; // R4
-
-        // Calcolo dello stack usize
-        // Dovremmo partire da *base* + len, ma avendo già caricato
-        // una stack frame, dobbiamo sottrarre 16.
-        let sp: StackPointer = unsafe { stack.as_ptr().add(len - 16) }.into();
-
-        Self { stack, sp }
-    }
-
-    pub fn sp(&self) -> StackPointer {
-        self.sp
-    }
-
-    pub fn sp_ref(&self) -> &StackPointer {
-        &self.sp
-    }
-}
+type StackPointer = &'static usize;
 
 #[derive(Clone, Copy)]
 pub enum ProcessState {
@@ -97,27 +23,11 @@ pub trait Process {
     fn set_prio(&mut self, prio: u8);
 
     fn stack_pointer(&self) -> StackPointer;
-    fn stack_ptr_ref(&self) -> &StackPointer;
 
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
 
     fn decrement_ticks(&self);
-
-    #[inline(always)]
-    fn idle() {
-        SystemCall(SysCallType::ProcessIdle);
-    }
-
-    #[inline(always)]
-    fn sleep(ticks: Ticks) {
-        SystemCall(SysCallType::ProcessSleep(ticks));
-    }
-
-    #[inline(always)]
-    fn stop() {
-        SystemCall(SysCallType::ProcessStop);
-    }
 }
 
 /// **PCB**
@@ -129,8 +39,14 @@ pub trait Process {
 /// Questa tecnica mi permette di risparmiare il decremento
 /// dei tick di sleeping e di effettuare unicamente il check
 /// di verifica con l'if.
+#[repr(C)]
 pub struct PCB {
-    stack: Stack,
+    /* !!! --------------------- !!! */
+    // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
+    sp: StackPointer,
+    /* !!! --------------------- !!! */
+
+    stack: &'static [usize],
     task: TaskHandle,
     state: Cell<ProcessState>,
     prio: u8,
@@ -138,9 +54,36 @@ pub struct PCB {
 
 impl Process for PCB {
     fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self {
+        let len = stack.len();
+
+        // Precarichiamo la stack con l'handle del Task
+        // Hardware stack; necessaria
+        stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
+        stack[len - 02] = task as usize; // PC
+        stack[len - 03] = 0xFFFFFFFD; // LR
+        stack[len - 04] = 0xC; // R12
+        stack[len - 05] = 0x3; // R3
+        stack[len - 06] = 0x2; // R2
+        stack[len - 07] = 0x1; // R1
+
+        // Software stack; non è strettamente necessaria, serve più per debug
+        stack[len - 09] = 0xB; // R11
+        stack[len - 10] = 0xA; // R10
+        stack[len - 11] = 0x9; // R9
+        stack[len - 12] = 0x8; // R8
+        stack[len - 13] = 0x7; // R7
+        stack[len - 14] = 0x6; // R6
+        stack[len - 15] = 0x5; // R5
+        stack[len - 16] = 0x4; // R4
+
+        // Calcolo dello stack usize
+        // Dovremmo partire da *base* + len, ma avendo già caricato
+        // una stack frame, dobbiamo sottrarre 16.
+        let sp: StackPointer = &stack[len - 16];
         Self {
+            sp,
             task,
-            stack: Stack::new(stack, task),
+            stack,
             prio,
             state: Cell::new(ProcessState::Idle),
         }
@@ -159,10 +102,7 @@ impl Process for PCB {
     }
 
     fn stack_pointer(&self) -> StackPointer {
-        self.stack.sp()
-    }
-    fn stack_ptr_ref(&self) -> &StackPointer {
-        self.stack.sp_ref()
+        self.sp
     }
 
     fn set_state(&self, state: ProcessState) {

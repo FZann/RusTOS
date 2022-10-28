@@ -4,11 +4,11 @@
 use RusTOS::kernel::semaphores::Semaphore;
 use RusTOS::kernel::processes::{Process, PCB};
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
-use RusTOS::kernel::{sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
+use RusTOS::kernel::{sleep_cpu, ExceptionFrame, SysCallType, SystemCall, sleep};
 
-static mut IDLE_STACK: [usize; 256] = [0usize; 256];
-static mut STACK: [usize; 256] = [0usize; 256];
-static mut STACK1: [usize; 256] = [0usize; 256];
+static mut IDLE_STACK: [usize; 256] = [0; 256];
+static mut STACK: [usize; 256] = [0; 256];
+static mut STACK1: [usize; 256] = [0; 256];
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -36,7 +36,7 @@ fn ciao() -> ! {
     let mut c = 0u32;
     loop {
         c += 1;
-        PCB::sleep(50);
+        sleep(50);
     }
 }
 
@@ -55,11 +55,11 @@ fn bello() -> ! {
 
         loop {
             gpioa_out.write(0x20);
-            PCB::sleep(500);
+            sleep(500);
             gpioa_out.write(0x20_0000);
-            PCB::sleep(500);
+            sleep(500);
             gpioa_out.write(0x20);
-            PCB::sleep(500);
+            sleep(500);
             //sem.wait();
         }
     }

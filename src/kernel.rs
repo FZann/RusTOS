@@ -38,43 +38,38 @@ pub fn stop() {
     SystemCall(SysCallType::ProcessStop);
 }
 
-#[derive(Clone)]
-pub struct BooleanVector {
-    vec: Cell<usize>,
+type BitVec = usize;
+
+trait BitVector {
+    fn get(&self, bit: usize) -> bool;
+    fn set(&mut self, bit: usize);
+    fn clear(&mut self, bit: usize);
+    fn first_set(&self) -> Result<usize, ()>;
 }
 
-impl BooleanVector {
-    pub const fn new() -> Self {
-        BooleanVector { vec: Cell::new(0) }
+impl BitVector for BitVec {
+    fn get(&self, bit: usize) -> bool {
+        self & (1 << bit) != 0
     }
 
-    pub fn read(&self, bit: u8) -> bool {
-        self.vec.get() & (1 << bit) == (1 << bit)
+    fn set(&mut self, bit: usize) {
+        *self |= 1 << bit;
     }
 
-    pub fn set(&self, bit: u8) {
-        let mut vec = self.vec.get();
-        vec |= 1 << bit;
-        self.vec.set(vec);
+    fn clear(&mut self, bit: usize) {
+        *self &= !(1 << bit);
     }
 
-    pub fn clear(&self, bit: u8) {
-        let mut vec = self.vec.get();
-        vec &= !(1 << bit);
-        self.vec.set(vec);
-    }
-
-    pub fn value(&self) -> usize {
-        self.vec.get()
-    }
-}
-
-impl core::ops::BitOr for BooleanVector {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self {
-            vec: Cell::new(self.value() | rhs.value()),
+    /// La funzione riporta un risultato 0-indexed, cioè ritorna 0
+    /// se il primissimo bit è settato; in questo modo possiamo usare
+    /// il valore per indirizzare gli array senza sottrazioni.
+    fn first_set(&self) -> Result<usize, ()> {
+        let zeros = self.leading_zeros() as usize;
+        if zeros == 32 {
+            Err(())
+        } else {
+            Ok(31 - zeros)
         }
     }
+
 }

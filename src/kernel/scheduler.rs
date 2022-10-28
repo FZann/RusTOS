@@ -1,7 +1,5 @@
 use crate::kernel::processes::{Process, ProcessState, PCB};
-use crate::kernel::{BooleanVector, Ticks};
-
-use super::SysCallType;
+use crate::kernel::{SysCallType, BitVec, BitVector, Ticks};
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
@@ -32,7 +30,7 @@ pub struct Preemptive {
     /* !!! --------------------- !!! */
     pub(crate) sys_call: SysCallType,
     processes: [Option<PCB>; 32],
-    active: BooleanVector,
+    active: BitVec,
     ticks: Ticks,
 }
 
@@ -47,7 +45,7 @@ impl Preemptive {
             process_next: None,
             sys_call: SysCallType::Nop,
             processes: [Self::NONE; 32],
-            active: BooleanVector::new(),
+            active: 0,
             ticks: 0,
         }
     }
@@ -57,10 +55,10 @@ impl Preemptive {
     /// Looppa su tutti gli indirizzi della lista, lanciando la funzione f su tutti gli elementi non-null.
     /// Con questa implementazione eseguiamo il minor numero possibile di iterazioni.
     pub fn foreach(&self, f: impl Fn(&PCB)) {
-        let tasks = self.active.clone();
-        while let Ok(id) = tasks.find_first_set() {
+        let mut tasks = self.active;
+        while let Ok(id) = tasks.first_set() {
             self.processes[id].as_ref().map(&f);
-            tasks.clear(id as u8);
+            tasks.clear(id);
         }
     }
 }
@@ -104,9 +102,9 @@ impl Scheduler for Preemptive {
     }
 
     fn find_next_ready(&self) -> Option<&PCB> {
-        let runnable = self.active.clone();
+        let mut runnable = self.active.clone();
 
-        while let Ok(id) = runnable.find_first_set() {
+        while let Ok(id) = runnable.first_set() {
             if let Some(next) = self.processes[id].as_ref() {
                 match next.get_state() {
                     ProcessState::Idle | ProcessState::Running => {
@@ -115,7 +113,7 @@ impl Scheduler for Preemptive {
                     _ => (),
                 }
             }
-            runnable.clear(id as u8);
+            runnable.clear(id);
         }
         
         None
@@ -145,7 +143,7 @@ impl Scheduler for Preemptive {
             Some(_) => Err(()),
             None => {
                 self.processes[prio] = Some(process);
-                self.active.set(prio as u8);
+                self.active.set(prio);
                 Ok(())
             }
         }
@@ -153,7 +151,7 @@ impl Scheduler for Preemptive {
 
     fn remove_process(&mut self, prio: u8) -> Result<(), ()> {
         self.processes[prio as usize].take();
-        self.active.clear(prio);
+        self.active.clear(prio as usize);
         Ok(())
     }
 }
