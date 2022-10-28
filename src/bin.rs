@@ -10,17 +10,22 @@ static mut IDLE_STACK: [usize; 256] = [0; 256];
 static mut STACK: [usize; 256] = [0; 256];
 static mut STACK1: [usize; 256] = [0; 256];
 
+static mut IDLE: Option<PCB> = None;
+static mut CIAO: Option<PCB> = None;
+static mut BELLO: Option<PCB> = None;
+
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        let idle: PCB = Process::new(idle_task, &mut IDLE_STACK, 0);
-        let pcb: PCB = Process::new(ciao, &mut STACK, 1);
-        let pcb1: PCB = Process::new(bello, &mut STACK1, 2);
+        IDLE = Some(PCB::new(idle_task, &mut IDLE_STACK, 0));
+        CIAO = Some(PCB::new(ciao, &mut STACK, 1));
+        BELLO = Some(PCB::new(bello, &mut STACK1, 2));
 
-        SCHEDULER.add_process(idle);
-        SCHEDULER.add_process(pcb);
-        SCHEDULER.add_process(pcb1);
+
+        SCHEDULER.add_process(IDLE.as_ref().unwrap());
+        SCHEDULER.add_process(CIAO.as_ref().unwrap());
+        SCHEDULER.add_process(BELLO.as_ref().unwrap());
         SystemCall(SysCallType::StartScheduler);
         unreachable!();
     }

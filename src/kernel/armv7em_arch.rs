@@ -130,7 +130,7 @@ pub extern "C" fn SecureFault() {}
 pub extern "C" fn SysTick() {
     let sched = unsafe { &mut SCHEDULER };
     sched.inc_system_ticks();
-    sched.run_next();
+    sched.schedule_next();
 }
 
 #[naked]
@@ -180,32 +180,35 @@ pub unsafe extern "C" fn PendSV() {
     asm!(
         // R3: &Scheduler
         // R2: &PCBs, running or next
-        // R0: value of StackPointers, running or next
+        // R0: value of StackPointers, &PCB running or &PCB next
 
         /* Salvataggio del contesto attuale */
         "cpsid	i",
-        "mrs    r0, psp",         // Take PSP value out to r0
-        "stmfd  r0!, {{r4-r11}}", // Save Context
-        "ldr    r3, =SCHEDULER",  // Get &Scheduler
-        "ldr    r2, [r3, #4]", // Get running &PCB's StackPointer to switch out (#4 due to Option)
-        "str	r0, [r2]",        // Save PSP value in &PCB (same as &StackPointer, 'cause of repr(C))
+        "mrs    r0, psp",           // Take PSP value out to r0
+        "stmfd  r0!, {{r4-r11}}",   // Save Context
+        "ldr    r3, =SCHEDULER",    // Get &Scheduler
+        "ldr    r2, [r3, #0]",      // Get running &PCB's StackPointer to switch out
+        "str	r0, [r2]",          // Save PSP value in &PCB (same as &StackPointer because of repr(C))
         "isb",
-        /* Check per determinare se c'è un nuovo processo da caricare */
+        
+        /* Check per determinare se c'è un nuovo processo da caricare (serve?) */
         //"bl     Supervisor",      // <--- Da fare (serve?)
 
         /* Caricamento del nuovo contesto */
-        "ldr    r2, [r3, #12]", // Get next &PCB's StackPointer to switch in (#12 due to Option)
-        "str    r2, [r3, #4]",  // Save &PCB as running
-        // Azzera il "next stack pointer"
+        "ldr    r2, [r3, #4]",      // Get next &PCB's StackPointer to switch in
+        "str    r2, [r3, #0]",      // Save &PCB as running
+        
+        // Azzera il "next &PCB"
         "mov    r1, #0",
-        "str    r1, [r3, #8]",  // Clear next &PCB (seen as None in Rust side)
-        "str    r1, [r3, #12]", // Clear next &PCB (seen as None in Rust side)
+        "str    r1, [r3, #4]",      // Clear next &PCB (seen as None in Rust side)
+        
         // Carica la nuova stack
-        "ldr    r0, [r2]",        // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}", // Load Context
-        "str    r0, [r2]",        // Saves new StackPointer value in &PCB
-        "msr	psp, r0",            // Moves StackPointer in PSP
+        "ldr    r0, [r2]",          // Get value of StackPointer
+        "ldmfd  r0!, {{r4-r11}}",   // Load Context
+        "str    r0, [r2]",          // Saves new StackPointer value in &PCB
+        "msr	psp, r0",           // Moves StackPointer in PSP
         "isb",
+        
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
         "cpsie	i",
@@ -229,12 +232,12 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         // R2: &PCB, running or next
         // R0: value of StackPointers, running or next
         /* Caricamento del nuovo contesto */
-        "ldr    r3, =SCHEDULER",  // Get &Scheduler
-        "ldr    r2, [r3, #4]",    // Get &PCB's StackPointer to run (#4 due to Option)
-        "ldr    r0, [r2]",        // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}", // Load Context
-        "str    r0, [r2]",        // Saves new Stackpointer value in &PCB
-        "msr	psp, r0",            // Moves r0 in PSP
+        "ldr    r3, =SCHEDULER",    // Get &Scheduler
+        "ldr    r2, [r3, #0]",      // Get &PCB's StackPointer to run
+        "ldr    r0, [r2]",          // Get value of StackPointer
+        "ldmfd  r0!, {{r4-r11}}",   // Load Context
+        "str    r0, [r2]",          // Saves new Stackpointer value in &PCB
+        "msr	psp, r0",           // Moves r0 in PSP
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
@@ -257,10 +260,10 @@ pub fn svc(sys_call: SysCallType) {
         SCHEDULER.sys_call = sys_call;
         match SCHEDULER.sys_call {
             SysCallType::Nop => (),
-            SysCallType::ProcessIdle => asm!("svc    1"),
+            SysCallType::ProcessIdle =>     asm!("svc    1"),
             SysCallType::ProcessSleep(_) => asm!("svc    2"),
-            SysCallType::ProcessStop => asm!("svc    3"),
-            SysCallType::StartScheduler => asm!("svc    4"),
+            SysCallType::ProcessStop =>     asm!("svc    3"),
+            SysCallType::StartScheduler =>  asm!("svc    4"),
         }
     }
 }
@@ -298,18 +301,18 @@ pub extern "C" fn SVCall() {
             sched.start();
         },
         SysCallType::ProcessIdle => {
-            if let Some(pcb) = sched.process_running {
-                sched.process_idle(unsafe { (*pcb).prio() });
+            if let Some(running) = sched.running {
+                sched.process_idle(running.prio() as usize);
             }
         }
         SysCallType::ProcessStop => {
-            if let Some(pcb) = sched.process_running {
-                sched.process_stop(unsafe { (*pcb).prio() });
+            if let Some(running) = sched.running {
+                sched.process_stop(running.prio() as usize);
             }
         }
         SysCallType::ProcessSleep(ticks) => {
-            if let Some(pcb) = sched.process_running {
-                sched.process_sleep(unsafe { (*pcb).prio() }, ticks);
+            if let Some(running) = sched.running {
+                sched.process_sleep(running.prio() as usize, ticks);
             }
         }
     }

@@ -16,11 +16,10 @@ impl Semaphore {
 
     pub fn wait(&self) {
         let sched = unsafe { &mut SCHEDULER };
-            if let Some(pcb_ptr) = sched.process_running {
-                let pcb = unsafe {&*pcb_ptr};
+            if let Some(pcb) = sched.running {
                 //self.locked.set(pcb.prio() as usize);
                 pcb.set_state(ProcessState::Stopped);
-                sched.run_next();
+                sched.schedule_next();
         }
     }
 
@@ -28,8 +27,8 @@ impl Semaphore {
         let sched = unsafe { &mut SCHEDULER };
         if let Ok(prio) = self.locked.first_set() {
             //self.locked.clear(prio as usize);
-            sched.process_idle(prio as u8);
-            sched.run_next();
+            sched.process_idle(prio);
+            sched.schedule_next();
         }
     }
 }

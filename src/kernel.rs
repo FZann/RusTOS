@@ -1,5 +1,3 @@
-use core::cell::Cell;
-
 // Aliasing per poter usare la compilazione condizionale
 pub use self::armv7em_arch::sleep_cpu;
 pub use self::armv7em_arch::svc as SystemCall;

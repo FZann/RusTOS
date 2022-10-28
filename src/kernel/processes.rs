@@ -16,17 +16,15 @@ pub enum ProcessState {
 
 pub trait Process {
     fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self
-    where
-        Self: Sized;
+    where Self: Sized;
+
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
     fn set_prio(&mut self, prio: u8);
-
-    fn stack_pointer(&self) -> StackPointer;
-
+    
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
-
+    fn stack_pointer(&self) -> StackPointer;
     fn decrement_ticks(&self);
 }
 
@@ -52,10 +50,33 @@ pub struct PCB {
     prio: u8,
 }
 
+
+#[repr(C)]
+pub struct PCB2<const WORDS: usize> {
+    /* !!! --------------------- !!! */
+    // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
+    sp: Option<StackPointer>,
+    /* !!! --------------------- !!! */
+
+    stack: [usize; WORDS],
+}
+
+impl<const WORDS: usize> PCB2<WORDS> {
+    pub fn allocate() -> Self {
+        let mut pcb = Self {
+            sp: None,
+            stack: [0; WORDS],
+        };
+        pcb.sp = Some(&pcb.stack[0]);
+        pcb
+
+    }
+}
+
 impl Process for PCB {
     fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self {
         let len = stack.len();
-
+        
         // Precarichiamo la stack con l'handle del Task
         // Hardware stack; necessaria
         stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
@@ -65,7 +86,7 @@ impl Process for PCB {
         stack[len - 05] = 0x3; // R3
         stack[len - 06] = 0x2; // R2
         stack[len - 07] = 0x1; // R1
-
+        
         // Software stack; non è strettamente necessaria, serve più per debug
         stack[len - 09] = 0xB; // R11
         stack[len - 10] = 0xA; // R10
@@ -75,10 +96,7 @@ impl Process for PCB {
         stack[len - 14] = 0x6; // R6
         stack[len - 15] = 0x5; // R5
         stack[len - 16] = 0x4; // R4
-
-        // Calcolo dello stack usize
-        // Dovremmo partire da *base* + len, ma avendo già caricato
-        // una stack frame, dobbiamo sottrarre 16.
+        
         let sp: StackPointer = &stack[len - 16];
         Self {
             sp,
