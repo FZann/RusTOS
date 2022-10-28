@@ -1,9 +1,10 @@
 use core::cell::Cell;
 
-use crate::kernel::{TaskHandle, Ticks};
+use crate::kernel::Ticks;
 
+pub type TaskHandle = Option<fn() -> !>;
 /// Wrapper per avere la type-safety.
-type StackPointer = &'static usize;
+type StackPointer<'sp> = Option<&'sp usize>;
 
 #[derive(Clone, Copy)]
 pub enum ProcessState {
@@ -15,16 +16,13 @@ pub enum ProcessState {
 }
 
 pub trait Process {
-    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self
-    where Self: Sized;
-
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
     fn set_prio(&mut self, prio: u8);
     
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
-    fn stack_pointer(&self) -> StackPointer;
+    fn sp(&self) -> StackPointer;
     fn decrement_ticks(&self);
 }
 
@@ -38,76 +36,63 @@ pub trait Process {
 /// dei tick di sleeping e di effettuare unicamente il check
 /// di verifica con l'if.
 #[repr(C)]
-pub struct PCB {
+pub struct Task<'sp, const WORDS: usize> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    sp: StackPointer,
+    sp: StackPointer<'sp>,
     /* !!! --------------------- !!! */
 
-    stack: &'static [usize],
+    stack: [usize; WORDS],
     task: TaskHandle,
     state: Cell<ProcessState>,
     prio: u8,
 }
 
+impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
+    pub const fn allocate() -> Self {
+        if WORDS <= 32 {
+            panic!("Stack troppo piccola!");
+        };
 
-#[repr(C)]
-pub struct PCB2<const WORDS: usize> {
-    /* !!! --------------------- !!! */
-    // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    sp: Option<StackPointer>,
-    /* !!! --------------------- !!! */
-
-    stack: [usize; WORDS],
-}
-
-impl<const WORDS: usize> PCB2<WORDS> {
-    pub fn allocate() -> Self {
-        let mut pcb = Self {
+        Self {
             sp: None,
             stack: [0; WORDS],
-        };
-        pcb.sp = Some(&pcb.stack[0]);
-        pcb
-
-    }
-}
-
-impl Process for PCB {
-    fn new(task: TaskHandle, stack: &'static mut [usize], prio: u8) -> Self {
-        let len = stack.len();
-        
-        // Precarichiamo la stack con l'handle del Task
-        // Hardware stack; necessaria
-        stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
-        stack[len - 02] = task as usize; // PC
-        stack[len - 03] = 0xFFFFFFFD; // LR
-        stack[len - 04] = 0xC; // R12
-        stack[len - 05] = 0x3; // R3
-        stack[len - 06] = 0x2; // R2
-        stack[len - 07] = 0x1; // R1
-        
-        // Software stack; non è strettamente necessaria, serve più per debug
-        stack[len - 09] = 0xB; // R11
-        stack[len - 10] = 0xA; // R10
-        stack[len - 11] = 0x9; // R9
-        stack[len - 12] = 0x8; // R8
-        stack[len - 13] = 0x7; // R7
-        stack[len - 14] = 0x6; // R6
-        stack[len - 15] = 0x5; // R5
-        stack[len - 16] = 0x4; // R4
-        
-        let sp: StackPointer = &stack[len - 16];
-        Self {
-            sp,
-            task,
-            stack,
-            prio,
+            task: None,
+            prio: 0,
             state: Cell::new(ProcessState::Idle),
         }
     }
 
+    pub fn setup(&'sp mut self, task: fn() -> !, prio: u8) -> &Self {
+        self.prio = prio;
+        self.task = Some(task);
+
+        self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
+        self.stack[WORDS - 02] = task as usize; // PC
+        self.stack[WORDS - 03] = 0xFFFFFFFD; // LR
+        self.stack[WORDS - 04] = 0xC; // R12
+        self.stack[WORDS - 05] = 0x3; // R3
+        self.stack[WORDS - 06] = 0x2; // R2
+        self.stack[WORDS - 07] = 0x1; // R1
+        
+        // Software stack; non è strettamente necessaria, serve più per debug
+        self.stack[WORDS - 09] = 0xB; // R11
+        self.stack[WORDS - 10] = 0xA; // R10
+        self.stack[WORDS - 11] = 0x9; // R9
+        self.stack[WORDS - 12] = 0x8; // R8
+        self.stack[WORDS - 13] = 0x7; // R7
+        self.stack[WORDS - 14] = 0x6; // R6
+        self.stack[WORDS - 15] = 0x5; // R5
+        self.stack[WORDS - 16] = 0x4; // R4
+
+        self.sp = Some(&self.stack[WORDS - 16]);
+        self
+    }
+}
+
+impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
     fn handle(&self) -> TaskHandle {
+        // Panica solamente prima della chiamata di setup (cioè mai)
         self.task
     }
 
@@ -119,7 +104,8 @@ impl Process for PCB {
         self.prio = prio;
     }
 
-    fn stack_pointer(&self) -> StackPointer {
+    fn sp(&self) -> StackPointer {
+        // Panica solamente prima della chiamata di setup (cioè mai)
         self.sp
     }
 
