@@ -1,24 +1,22 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::semaphores::Semaphore;
 use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
-use RusTOS::kernel::{sleep_cpu, ExceptionFrame, SysCallType, SystemCall, sleep};
+use RusTOS::kernel::semaphores::Semaphore;
+use RusTOS::kernel::{sleep, sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
 
-static mut IDLE: Task::<33> = Task::allocate();
-static mut CIAO: Task::<256> = Task::allocate();
-static mut BELLO: Task::<256> = Task::allocate();
+static mut IDLE: Task<33> = Task::allocate();
+static mut CIAO: Task<256> = Task::allocate();
+static mut BELLO: Task<256> = Task::allocate();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-
         IDLE.setup(idle_task, 0);
         CIAO.setup(ciao, 1);
         BELLO.setup(bello, 2);
-
 
         SCHEDULER.add_process(&IDLE);
         SCHEDULER.add_process(&CIAO);

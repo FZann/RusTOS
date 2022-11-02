@@ -3,7 +3,6 @@ use core::cell::Cell;
 use crate::kernel::Ticks;
 
 pub type TaskHandle = Option<fn() -> !>;
-/// Wrapper per avere la type-safety.
 type StackPointer<'sp> = Option<&'sp usize>;
 
 #[derive(Clone, Copy)]
@@ -19,7 +18,7 @@ pub trait Process {
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
     fn set_prio(&mut self, prio: u8);
-    
+
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
     fn sp(&self) -> StackPointer;
@@ -41,7 +40,6 @@ pub struct Task<'sp, const WORDS: usize> {
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
     sp: StackPointer<'sp>,
     /* !!! --------------------- !!! */
-
     stack: [usize; WORDS],
     task: TaskHandle,
     state: Cell<ProcessState>,
@@ -74,7 +72,7 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
         self.stack[WORDS - 05] = 0x3; // R3
         self.stack[WORDS - 06] = 0x2; // R2
         self.stack[WORDS - 07] = 0x1; // R1
-        
+
         // Software stack; non è strettamente necessaria, serve più per debug
         self.stack[WORDS - 09] = 0xB; // R11
         self.stack[WORDS - 10] = 0xA; // R10

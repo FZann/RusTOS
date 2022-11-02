@@ -1,4 +1,4 @@
-use cortex_m::peripheral::{Peripherals, self};
+use cortex_m::peripheral::{self, Peripherals};
 
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 use crate::kernel::SysCallType;
@@ -171,8 +171,6 @@ pub unsafe extern "C" fn __ENTRY() {
     );
 }
 
-
-
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn PendSV() {
@@ -188,35 +186,30 @@ pub unsafe extern "C" fn PendSV() {
 
         /* Salvataggio del contesto attuale */
         "cpsid	i",
-        "mrs    r0, psp",           // Take PSP value out to r0
-        "stmfd  r0!, {{r4-r11}}",   // Save Context
-        "ldr    r3, =SCHEDULER",    // Get &Scheduler
-        "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
-        "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
+        "mrs    r0, psp",         // Take PSP value out to r0
+        "stmfd  r0!, {{r4-r11}}", // Save Context
+        "ldr    r3, =SCHEDULER",  // Get &Scheduler
+        "ldr    r2, [r3, #0]",    // Get running &dyn Process' StackPointer to switch out
+        "str	r0, [r2]", // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
         "isb",
-        
         /* Caricamento del nuovo contesto */
-        //"bl     switch_to_next", 
-        
-        "ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
-        "str    r2, [r3, #0]",      // Save &dyn Process' data as running
-
+        //"bl     switch_to_next",
+        "ldr    r2, [r3, #8]", // Get next &dyn Process' StackPointer to switch in
+        "str    r2, [r3, #0]", // Save &dyn Process' data as running
         /* Non dovrebbe servire cambiare vtable: si tratta sempre di &dyn Process */
-//        "ldr    r2, [r3, #12]",     // Get next &dyn Process' vtable to switch in
-//        "str    r2, [r3, #4]",      // Save &dyn Process' vtable as running
-        
+        //        "ldr    r2, [r3, #12]",     // Get next &dyn Process' vtable to switch in
+        //        "str    r2, [r3, #4]",      // Save &dyn Process' vtable as running
+
         // Azzera il "next &dyn Process"
         "mov    r1, #0",
-        "str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
-        "str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
-
+        "str    r1, [r3, #8]", // Clear next &dyn Process (seen as None in Rust side)
+        "str    r1, [r3, #12]", // Clear next &dyn Process (seen as None in Rust side)
         // Carica la nuova stack
-        "ldr    r0, [r2]",          // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}",   // Load Context
-        "str    r0, [r2]",          // Saves new StackPointer value in &dyn Process
-        "msr	psp, r0",           // Moves StackPointer in PSP
+        "ldr    r0, [r2]",        // Get value of StackPointer
+        "ldmfd  r0!, {{r4-r11}}", // Load Context
+        "str    r0, [r2]",        // Saves new StackPointer value in &dyn Process
+        "msr	psp, r0",            // Moves StackPointer in PSP
         "isb",
-        
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
         "cpsie	i",
@@ -224,7 +217,6 @@ pub unsafe extern "C" fn PendSV() {
         options(noreturn)
     );
 }
-
 
 /*
 NON VA, LOL! Probabilmente non salva i registri perché è già in contesto privilegiato
@@ -246,12 +238,12 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         // R2: &PCB, running or next
         // R0: value of StackPointers, running or next
         /* Caricamento del nuovo contesto */
-        "ldr    r3, =SCHEDULER",    // Get &Scheduler
-        "ldr    r2, [r3, #0]",      // Get &PCB's StackPointer to run
-        "ldr    r0, [r2]",          // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}",   // Load Context
-        "str    r0, [r2]",          // Saves new Stackpointer value in &PCB
-        "msr	psp, r0",           // Moves r0 in PSP
+        "ldr    r3, =SCHEDULER",  // Get &Scheduler
+        "ldr    r2, [r3, #0]",    // Get &PCB's StackPointer to run
+        "ldr    r0, [r2]",        // Get value of StackPointer
+        "ldmfd  r0!, {{r4-r11}}", // Load Context
+        "str    r0, [r2]",        // Saves new Stackpointer value in &PCB
+        "msr	psp, r0",            // Moves r0 in PSP
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
@@ -274,10 +266,10 @@ pub fn svc(sys_call: SysCallType) {
         SCHEDULER.sys_call = sys_call;
         match SCHEDULER.sys_call {
             SysCallType::Nop => (),
-            SysCallType::ProcessIdle =>     asm!("svc    1"),
+            SysCallType::ProcessIdle => asm!("svc    1"),
             SysCallType::ProcessSleep(_) => asm!("svc    2"),
-            SysCallType::ProcessStop =>     asm!("svc    3"),
-            SysCallType::StartScheduler =>  asm!("svc    4"),
+            SysCallType::ProcessStop => asm!("svc    3"),
+            SysCallType::StartScheduler => asm!("svc    4"),
         }
     }
 }
@@ -313,7 +305,7 @@ pub extern "C" fn SVCall() {
             sys_tick.enable_interrupt();
             sys_tick.enable_counter();
             sched.start();
-        },
+        }
         SysCallType::ProcessIdle => {
             if let Some(running) = sched.running {
                 sched.process_idle(running.prio() as usize);

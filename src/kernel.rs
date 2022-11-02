@@ -11,7 +11,6 @@ pub mod semaphores;
 
 pub type Ticks = usize;
 
-
 #[derive(PartialEq, PartialOrd)]
 pub enum SysCallType {
     Nop,
@@ -69,5 +68,4 @@ impl BitVector for BitVec {
             Ok(31 - zeros)
         }
     }
-
 }

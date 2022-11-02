@@ -1,11 +1,11 @@
 use crate::kernel::processes::{Process, ProcessState};
-use crate::kernel::{SysCallType, BitVec, BitVector, Ticks};
+use crate::kernel::{BitVec, BitVector, SysCallType, Ticks};
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
 
 pub trait Scheduler<'p> {
-     fn start(&mut self) -> !;
+    fn start(&mut self) -> !;
 
     fn process_idle(&mut self, prio: usize);
     fn process_stop(&mut self, prio: usize);
@@ -49,16 +49,6 @@ impl<'p> Preemptive<'p> {
             ticks: 0,
         }
     }
-
-    /// Looppa su tutti gli indirizzi della lista, lanciando la funzione f su tutti gli elementi non-null.
-    /// Con questa implementazione eseguiamo il minor numero possibile di iterazioni.
-    pub fn foreach(&self, f: impl Fn(&dyn Process)) {
-        let mut tasks = self.schedulable;
-        while let Ok(id) = tasks.first_set() {
-            self.processes[id].map(&f);
-            tasks.clear(id);
-        }
-    }
 }
 
 impl<'p> Scheduler<'p> for Preemptive<'p> {
@@ -66,7 +56,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         /* Scheduling first process */
         let id = self.schedulable.first_set().unwrap();
         self.running = self.processes[id];
-        
+
         unsafe {
             crate::kernel::armv7em_arch::load_first_process();
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
@@ -100,9 +90,16 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
 
     fn inc_system_ticks(&mut self) {
         self.ticks = self.ticks + 1;
-        self.foreach(|pcb| {
-            pcb.decrement_ticks();
-        });
+
+        // Loop su tutti gli elementi non-null per decrementarne i ticks
+        for maybe_task in self.processes {
+            if let Some(task) = maybe_task {
+                task.decrement_ticks();
+                if let ProcessState::Idle = task.get_state() {
+                    self.schedulable.set(task.prio() as usize);
+                }
+            }
+        }
     }
 
     /// Questa funzione è eseguita nell'interrupt SysTick, per ricercare il prossimo task da avviare.
@@ -112,16 +109,13 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         let mut runnable = self.schedulable;
 
         while let Ok(id) = runnable.first_set() {
-            if let Some(next) = self.processes[id] {
-                match next.get_state() {
-                    ProcessState::Idle | 
-                    ProcessState::Running => {
-                        self.next = Some(next);
-                        cortex_m::peripheral::SCB::set_pendsv();
-                        return;
-                    }
-                    _ => (),
+            match self.processes[id].unwrap().get_state() {
+                ProcessState::Idle | ProcessState::Running => {
+                    self.next = self.processes[id];
+                    cortex_m::peripheral::SCB::set_pendsv();
+                    return;
                 }
+                _ => (),
             }
             runnable.clear(id);
         }
