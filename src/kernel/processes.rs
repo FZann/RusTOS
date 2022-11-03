@@ -90,7 +90,6 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
 
 impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
     fn handle(&self) -> TaskHandle {
-        // Panica solamente prima della chiamata di setup (cioè mai)
         self.task
     }
 
@@ -103,7 +102,6 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
     }
 
     fn sp(&self) -> StackPointer {
-        // Panica solamente prima della chiamata di setup (cioè mai)
         self.sp
     }
 
