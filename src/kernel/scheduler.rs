@@ -24,7 +24,7 @@ pub trait Scheduler<'p> {
 pub struct Preemptive<'p> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    // Il fatto di usare Option<&P> implica una dimensione di una singola word dei campi running e next.
+    // Il fatto di usare Option<&dyn Process> implica una dimensione di due words dei campi running e next.
     // Questo si deve riflettere nell'assembly, usando i giusti offset.
     pub(crate) running: Option<&'p dyn Process>,
     pub(crate) next: Option<&'p dyn Process>,

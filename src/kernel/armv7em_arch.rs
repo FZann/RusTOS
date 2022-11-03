@@ -176,7 +176,7 @@ pub unsafe extern "C" fn __ENTRY() {
 pub unsafe extern "C" fn PendSV() {
     asm!(
         // Il layout in memoria di &dyn Process è:
-        // [*RAM data : usize; *FLASH functions : usize]
+        // [RAM data : *usize; vtable : *usize]
         // Sono due puntatori. A noi serve il primo puntatore verso la memoria RAM
         // Nel codice seguente effettueremo questo puntamento per cambiare contesto
 
@@ -186,29 +186,26 @@ pub unsafe extern "C" fn PendSV() {
 
         /* Salvataggio del contesto attuale */
         "cpsid	i",
-        "mrs    r0, psp",         // Take PSP value out to r0
-        "stmfd  r0!, {{r4-r11}}", // Save Context
-        "ldr    r3, =SCHEDULER",  // Get &Scheduler
-        "ldr    r2, [r3, #0]",    // Get running &dyn Process' StackPointer to switch out
-        "str	r0, [r2]", // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
+        "mrs    r0, psp",           // Take PSP value out to r0
+        "stmfd  r0!, {{r4-r11}}",   // Save Context
+        "ldr    r3, =SCHEDULER",    // Get &Scheduler
+        "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
+        "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
         "isb",
         /* Caricamento del nuovo contesto */
         //"bl     switch_to_next",
-        "ldr    r2, [r3, #8]", // Get next &dyn Process' StackPointer to switch in
-        "str    r2, [r3, #0]", // Save &dyn Process' data as running
-        /* Non dovrebbe servire cambiare vtable: si tratta sempre di &dyn Process */
-        //        "ldr    r2, [r3, #12]",     // Get next &dyn Process' vtable to switch in
-        //        "str    r2, [r3, #4]",      // Save &dyn Process' vtable as running
+        "ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
+        "str    r2, [r3, #0]",      // Save &dyn Process' data as running
 
         // Azzera il "next &dyn Process"
         "mov    r1, #0",
-        "str    r1, [r3, #8]", // Clear next &dyn Process (seen as None in Rust side)
-        "str    r1, [r3, #12]", // Clear next &dyn Process (seen as None in Rust side)
+        "str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
+        "str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
         // Carica la nuova stack
-        "ldr    r0, [r2]",        // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}", // Load Context
-        "str    r0, [r2]",        // Saves new StackPointer value in &dyn Process
-        "msr	psp, r0",            // Moves StackPointer in PSP
+        "ldr    r0, [r2]",          // Get value of StackPointer
+        "ldmfd  r0!, {{r4-r11}}",   // Load Context
+        "str    r0, [r2]",          // Saves new StackPointer value in &dyn Process
+        "msr	psp, r0",           // Moves StackPointer in PSP
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
