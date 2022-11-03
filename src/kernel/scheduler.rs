@@ -16,6 +16,7 @@ pub trait Scheduler<'p> {
     fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()>;
     fn remove_process(&mut self, prio: usize) -> Result<(), ()>;
 }
+
 /// Lo Scheduler tiene in memoria anche le variabili che servono per completare
 /// un context switch. In questo modo evito di usare una serie di unsafe per
 /// la modifica dei valori, perché non risultano statici allo scheduler stesso
@@ -31,6 +32,7 @@ pub struct Preemptive<'p> {
     pub(crate) sys_call: SysCallType,
     processes: [Option<&'p dyn Process>; 32],
     schedulable: BitVec,
+    sleeping: BitVec,
     ticks: Ticks,
 }
 
@@ -46,6 +48,7 @@ impl<'p> Preemptive<'p> {
             sys_call: SysCallType::Nop,
             processes: [Self::NONE; 32],
             schedulable: 0,
+            sleeping: 0,
             ticks: 0,
         }
     }
@@ -58,7 +61,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         self.running = self.processes[id];
 
         unsafe {
-            crate::kernel::armv7em_arch::load_first_process();
+            crate::kernel::load_first_process();
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
     }
@@ -66,14 +69,16 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn process_idle(&mut self, prio: usize) {
         if let Some(pcb) = self.processes[prio] {
             pcb.set_state(ProcessState::Idle);
-            self.schedule_next();
+            self.schedulable.set(prio);
+            self.sleeping.clear(prio);
         }
     }
 
     fn process_stop(&mut self, prio: usize) {
         if let Some(pcb) = self.processes[prio] {
             pcb.set_state(ProcessState::Stopped);
-            self.schedule_next();
+            self.schedulable.clear(prio);
+            self.sleeping.clear(prio);
         }
     }
 
@@ -84,21 +89,23 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
         if let Some(pcb) = self.processes[prio] {
             pcb.set_state(ProcessState::Sleeping(ticks));
-            self.schedule_next();
+            self.schedulable.clear(prio);
+            self.sleeping.set(prio);
         }
     }
 
     fn inc_system_ticks(&mut self) {
         self.ticks = self.ticks + 1;
 
-        // Loop su tutti gli elementi non-null per decrementarne i ticks
-        for maybe_task in self.processes {
-            if let Some(task) = maybe_task {
-                task.decrement_ticks();
-                if let ProcessState::Idle = task.get_state() {
-                    self.schedulable.set(task.prio() as usize);
-                }
+        let mut sleeping = self.sleeping;
+        while let Ok(id) = sleeping.first_set() {
+            let task = self.processes[id].unwrap();
+            task.decrement_ticks();
+            if let ProcessState::Idle = task.get_state() {
+                self.schedulable.set(id);
+                self.sleeping.clear(id);
             }
+            sleeping.clear(id);
         }
     }
 
@@ -106,18 +113,12 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     /// Se c'è un nuovo task la funzione triggera l'interrupt di PendSV, dove avviene lo switch.
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     fn schedule_next(&mut self) {
-        let mut runnable = self.schedulable;
-
-        while let Ok(id) = runnable.first_set() {
-            match self.processes[id].unwrap().get_state() {
-                ProcessState::Idle | ProcessState::Running => {
-                    self.next = self.processes[id];
-                    cortex_m::peripheral::SCB::set_pendsv();
-                    return;
-                }
-                _ => (),
-            }
-            runnable.clear(id);
+        /* Con una singola clz troviamo subito il prossimo processo schedulabile */
+        if let Ok(id) = self.schedulable.first_set() {
+            self.next = self.processes[id];
+            cortex_m::peripheral::SCB::set_pendsv();
+        } else {
+            panic!("CASINO ATROCE! Siamo senza idle task.")
         }
     }
 

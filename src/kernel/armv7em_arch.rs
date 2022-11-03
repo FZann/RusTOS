@@ -309,16 +309,19 @@ pub extern "C" fn SVCall() {
         SysCallType::ProcessIdle => {
             if let Some(running) = sched.running {
                 sched.process_idle(running.prio() as usize);
+                sched.schedule_next();
             }
         }
         SysCallType::ProcessStop => {
             if let Some(running) = sched.running {
                 sched.process_stop(running.prio() as usize);
+                sched.schedule_next();
             }
         }
         SysCallType::ProcessSleep(ticks) => {
             if let Some(running) = sched.running {
                 sched.process_sleep(running.prio() as usize, ticks);
+                sched.schedule_next();
             }
         }
     }

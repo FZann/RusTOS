@@ -1,29 +1,37 @@
-use crate::kernel::processes::{Process, ProcessState};
+use core::cell::Cell;
+
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 use crate::kernel::{BitVec, BitVector};
 
 pub struct Semaphore {
-    locked: BitVec,
+    locked: Cell<BitVec>,
 }
 
 impl Semaphore {
-    pub fn new() -> Self {
-        Semaphore { locked: 0 }
+    pub const fn new() -> Self {
+        Semaphore { locked: Cell::new(0) }
     }
 
     pub fn wait(&self) {
         let sched = unsafe { &mut SCHEDULER };
-        if let Some(pcb) = sched.running {
-            //self.locked.set(pcb.prio() as usize);
-            pcb.set_state(ProcessState::Stopped);
-            sched.schedule_next();
-        }
+        let prio = sched.running.unwrap().prio() as usize;
+        
+        let mut locked = self.locked.get();
+        locked.set(prio);
+        self.locked.set(locked);
+
+        sched.process_stop(prio);
+        sched.schedule_next();
     }
 
     pub fn release(&self) {
         let sched = unsafe { &mut SCHEDULER };
-        if let Ok(prio) = self.locked.first_set() {
-            //self.locked.clear(prio as usize);
+        let mut locked = self.locked.get();
+
+        if let Ok(prio) = locked.first_set() {
+            locked.clear(prio);
+            self.locked.set(locked);
+
             sched.process_idle(prio);
             sched.schedule_next();
         }

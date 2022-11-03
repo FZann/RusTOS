@@ -9,6 +9,7 @@ use RusTOS::kernel::{sleep, sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
 static mut IDLE: Task<33> = Task::allocate();
 static mut CIAO: Task<256> = Task::allocate();
 static mut BELLO: Task<256> = Task::allocate();
+static mut SEM: Semaphore = Semaphore::new();
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -36,12 +37,14 @@ fn ciao() -> ! {
     let mut c = 0u32;
     loop {
         c += 1;
-        sleep(50);
+        unsafe {
+            SEM.release();
+        }
+        sleep(500);
     }
 }
 
 fn bello() -> ! {
-    let sem = Semaphore::new();
     unsafe {
         let mut rcc: *mut usize = 0x4002_1000 as *mut usize;
         rcc = rcc.add(5);
@@ -55,12 +58,11 @@ fn bello() -> ! {
 
         loop {
             gpioa_out.write(0x20);
-            sleep(500);
+            SEM.wait();
+            //sleep(500);
             gpioa_out.write(0x20_0000);
-            sleep(500);
-            gpioa_out.write(0x20);
-            sleep(500);
-            //sem.wait();
+            SEM.wait();
+            //sleep(500);
         }
     }
 }
