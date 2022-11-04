@@ -6,18 +6,18 @@ use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
 use RusTOS::kernel::{sleep, sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
 
-static mut IDLE: Task<33> = Task::allocate();
-static mut CIAO: Task<256> = Task::allocate();
-static mut BELLO: Task<256> = Task::allocate();
+static mut IDLE: Task<33> = Task::allocate(0);
+static mut CIAO: Task<256> = Task::allocate(1);
+static mut BELLO: Task<256> = Task::allocate(2);
 static mut SEM: Semaphore = Semaphore::new();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        IDLE.setup(idle_task, 0);
-        CIAO.setup(ciao, 1);
-        BELLO.setup(bello, 2);
+        IDLE.setup(idle_task);
+        CIAO.setup(ciao);
+        BELLO.setup(bello);
 
         SCHEDULER.add_process(&IDLE);
         SCHEDULER.add_process(&CIAO);

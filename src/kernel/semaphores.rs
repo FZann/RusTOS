@@ -9,13 +9,15 @@ pub struct Semaphore {
 
 impl Semaphore {
     pub const fn new() -> Self {
-        Semaphore { locked: Cell::new(0) }
+        Semaphore {
+            locked: Cell::new(0),
+        }
     }
 
     pub fn wait(&self) {
         let sched = unsafe { &mut SCHEDULER };
         let prio = sched.running.unwrap().prio() as usize;
-        
+
         let mut locked = self.locked.get();
         locked.set(prio);
         self.locked.set(locked);

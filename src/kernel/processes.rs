@@ -17,7 +17,6 @@ pub enum ProcessState {
 pub trait Process {
     fn handle(&self) -> TaskHandle;
     fn prio(&self) -> u8;
-    fn set_prio(&mut self, prio: u8);
 
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
@@ -47,7 +46,7 @@ pub struct Task<'sp, const WORDS: usize> {
 }
 
 impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
-    pub const fn allocate() -> Self {
+    pub const fn allocate(prio: u8) -> Self {
         if WORDS <= 32 {
             panic!("Stack troppo piccola!");
         };
@@ -56,13 +55,12 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
             sp: None,
             stack: [0; WORDS],
             task: None,
-            prio: 0,
+            prio,
             state: Cell::new(ProcessState::Idle),
         }
     }
 
-    pub fn setup(&'sp mut self, task: fn() -> !, prio: u8) -> &Self {
-        self.prio = prio;
+    pub fn setup(&'sp mut self, task: fn() -> !) -> &Self {
         self.task = Some(task);
 
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
@@ -95,10 +93,6 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
 
     fn prio(&self) -> u8 {
         self.prio
-    }
-
-    fn set_prio(&mut self, prio: u8) {
-        self.prio = prio;
     }
 
     fn sp(&self) -> StackPointer {

@@ -118,7 +118,8 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
             self.next = self.processes[id];
             cortex_m::peripheral::SCB::set_pendsv();
         } else {
-            panic!("CASINO ATROCE! Siamo senza idle task.")
+            panic!("CASINO ATROCE! Siamo senza idle task.");
+            crate::kernel::sleep_cpu();
         }
     }
 
