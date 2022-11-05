@@ -114,12 +114,15 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
-        if let Ok(id) = self.schedulable.first_set() {
-            self.next = self.processes[id];
-            cortex_m::peripheral::SCB::set_pendsv();
-        } else {
-            panic!("CASINO ATROCE! Siamo senza idle task.");
-            crate::kernel::sleep_cpu();
+        match (self.schedulable.first_set(), self.running) {
+            (Ok(id), Some(run)) if run.prio() != id as u8 => {
+                self.next = self.processes[id];
+                cortex_m::peripheral::SCB::set_pendsv();
+            },
+            _ => {
+                panic!("CASINO ATROCE! Siamo senza idle task.");
+                // crate::kernel::sleep_cpu();
+            }
         }
     }
 
