@@ -1,5 +1,8 @@
 use crate::kernel::semaphores::Semaphore;
 
+
+/// Coda. L'implementazione sul passaggio dei dati by-value (copia)
+/// e non by-ref (puntatore/riferimento).
 pub struct Queue<T, const SIZE: usize> {
     sem: Semaphore,
     buf: [Option<T>; SIZE],
@@ -29,7 +32,7 @@ where
         }
 
         self.buf[self.push_index] = Some(object);
-        self.sem.release();
+        self.sem.release();     // Segnalazione per eventuali pop in attesa
         self.push_index += 1;
         if self.push_index >= SIZE {
             self.push_index = 0;
@@ -37,13 +40,14 @@ where
     }
 
     pub fn pop(&mut self) -> T {
+        // Andiamo in attesa col semaforo, perché la coda è vuota
         while self.buf[self.pop_index].is_none() {
             self.sem.wait()
         }
 
-        // Siamo sicuri che unwrap non panichi
+        // Unwrap non panica sicuramente, abbiamo fatto il test prima!
         let result = self.buf[self.pop_index].take().unwrap();
-        self.sem.release();
+        self.sem.release();     // Segnalazione per eventuali push in attesa
         self.pop_index += 1;
         if self.pop_index >= SIZE {
             self.pop_index = 0;

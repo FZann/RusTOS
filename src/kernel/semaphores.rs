@@ -1,7 +1,7 @@
 use core::cell::Cell;
 
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use crate::kernel::{BitVec, BitVector};
+use crate::kernel::BitVec;
 
 pub struct Semaphore {
     locked: Cell<BitVec>,
@@ -10,7 +10,7 @@ pub struct Semaphore {
 impl Semaphore {
     pub const fn new() -> Self {
         Semaphore {
-            locked: Cell::new(0),
+            locked: Cell::new(BitVec::new()),
         }
     }
 

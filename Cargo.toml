@@ -16,9 +16,6 @@ path = "src/lib.rs"
 name = "RusTOS"
 path = "src/bin.rs"
 
-#[[test]]
-#name = "compiletest"
-
 [profile.dev]
 panic = "abort"
 test = false

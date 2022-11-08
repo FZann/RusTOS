@@ -2,9 +2,9 @@
 #![no_main]
 #![feature(naked_functions)]
 
-use core::panic::PanicInfo;
-
 pub mod kernel;
+
+use core::panic::PanicInfo;
 
 #[panic_handler]
 pub fn panic_handler(_: &PanicInfo) -> ! {

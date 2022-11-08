@@ -1,15 +1,15 @@
+pub mod processes;
+pub mod queues;
+pub mod scheduler;
+pub mod semaphores;
+
+mod armv7em_arch;
+
 // Aliasing per poter usare la compilazione condizionale
 pub use self::armv7em_arch::load_first_process;
 pub use self::armv7em_arch::sleep_cpu;
 pub use self::armv7em_arch::svc as SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
-
-mod armv7em_arch;
-
-pub mod processes;
-pub mod queues;
-pub mod scheduler;
-pub mod semaphores;
 
 pub type Ticks = usize;
 
@@ -37,33 +37,33 @@ pub fn stop() {
     SystemCall(SysCallType::ProcessStop);
 }
 
-type BitVec = usize;
-
-trait BitVector {
-    fn get(&self, bit: usize) -> bool;
-    fn set(&mut self, bit: usize);
-    fn clear(&mut self, bit: usize);
-    fn first_set(&self) -> Result<usize, ()>;
+#[derive(Clone, Copy)]
+pub struct BitVec {
+    vec: usize,
 }
 
-impl BitVector for BitVec {
-    fn get(&self, bit: usize) -> bool {
-        self & (1 << bit) != 0
+impl BitVec {
+    pub const fn new() -> Self {
+        Self { vec: 0 }
     }
 
-    fn set(&mut self, bit: usize) {
-        *self |= 1 << bit;
+    pub fn get(&self, bit: usize) -> bool {
+        self.vec & (1 << bit) != 0
     }
 
-    fn clear(&mut self, bit: usize) {
-        *self &= !(1 << bit);
+    pub fn set(&mut self, bit: usize) {
+        self.vec |= 1 << bit;
+    }
+
+    pub fn clear(&mut self, bit: usize) {
+        self.vec &= !(1 << bit);
     }
 
     /// La funzione riporta un risultato 0-indexed, cioè ritorna 0
     /// se il primissimo bit è settato; in questo modo possiamo usare
     /// il valore per indirizzare gli array senza sottrazioni.
-    fn first_set(&self) -> Result<usize, ()> {
-        let zeros = self.leading_zeros() as usize;
+    pub fn first_set(&self) -> Result<usize, ()> {
+        let zeros = self.vec.leading_zeros() as usize;
         if zeros == 32 {
             Err(())
         } else {

@@ -1,5 +1,5 @@
 use crate::kernel::processes::{Process, ProcessState};
-use crate::kernel::{BitVec, BitVector, SysCallType, Ticks};
+use crate::kernel::{BitVec, SysCallType, Ticks};
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
@@ -47,8 +47,8 @@ impl<'p> Preemptive<'p> {
             next: None,
             sys_call: SysCallType::Nop,
             processes: [Self::NONE; 32],
-            schedulable: 0,
-            sleeping: 0,
+            schedulable: BitVec::new(),
+            sleeping: BitVec::new(),
             ticks: 0,
         }
     }
@@ -120,6 +120,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
                 cortex_m::peripheral::SCB::set_pendsv();
             },
             _ => {
+                // TODO: inserire lo sleep automatico, magari senza idle task
                 panic!("CASINO ATROCE! Siamo senza idle task.");
                 // crate::kernel::sleep_cpu();
             }

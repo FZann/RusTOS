@@ -295,12 +295,20 @@ pub extern "C" fn SVCall() {
     match sched.sys_call {
         SysCallType::Nop => (),
         SysCallType::StartScheduler => {
-            let mut sys_tick = Peripherals::take().unwrap().SYST;
+            let mut p = Peripherals::take().unwrap();
+            
+            let sys_tick = &mut p.SYST;
             sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
             let reload = peripheral::SYST::get_ticks_per_10ms();
             sys_tick.set_reload(reload);
             sys_tick.enable_interrupt();
             sys_tick.enable_counter();
+
+            // TODO: impostare le priorità degli interrupt. 
+            // SVC deve avere prio massima
+            // PendSV, invece, la prio minima
+            let mut _nvic = &p.NVIC;
+
             sched.start();
         }
         SysCallType::ProcessIdle => {
