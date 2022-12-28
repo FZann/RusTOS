@@ -19,7 +19,7 @@
             // "executable": "./target/thumbv7em-none-eabihf/debug/examples/itm",
             "device": "STM32F334R8T6",
             "configFiles": [
-                "interface/stlink-v2.cfg",
+                "interface/stlink.cfg",
                 "target/stm32f3x.cfg"
             ],
             "showDevDebugOutput": "raw",
