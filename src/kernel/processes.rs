@@ -27,12 +27,6 @@ pub trait Process {
 /// **PCB**
 ///
 /// Process Control Block per un dispositivo ARM Cortex-M4.
-/// In questo caso i ticks indicano i tick in valore assoluto.
-/// Questo perché i valori di Sleep sono calcolati aggiungendo
-/// il tempo di Sleep al valore di ticks attuali.
-/// Questa tecnica mi permette di risparmiare il decremento
-/// dei tick di sleeping e di effettuare unicamente il check
-/// di verifica con l'if.
 #[repr(C)]
 pub struct Task<'sp, const WORDS: usize> {
     /* !!! --------------------- !!! */

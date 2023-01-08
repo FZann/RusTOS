@@ -2,6 +2,7 @@
 #![no_main]
 
 use RusTOS::kernel::processes::Task;
+use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
 use RusTOS::kernel::{sleep, sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
@@ -10,6 +11,7 @@ static mut IDLE: Task<33> = Task::allocate(0);
 static mut CIAO: Task<256> = Task::allocate(1);
 static mut BELLO: Task<256> = Task::allocate(2);
 static mut SEM: Semaphore = Semaphore::new();
+static mut QUEUE: Queue<bool, 8> = Queue::allocate();
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -38,9 +40,12 @@ fn ciao() -> ! {
     loop {
         c += 1;
         unsafe {
-            SEM.release();
+            QUEUE.push(true);
+            sleep(500);
+            QUEUE.push(false);
+            sleep(500);
         }
-        sleep(500);
+        
     }
 }
 
@@ -57,12 +62,11 @@ fn bello() -> ! {
         let gpioa_out = gpioa.add(6);
 
         loop {
-            gpioa_out.write(0x20);
-            SEM.wait();
-            //sleep(500);
-            gpioa_out.write(0x20_0000);
-            SEM.wait();
-            //sleep(500);
+            let led_state = QUEUE.pop();
+            match led_state {
+                true => gpioa_out.write(0x20),
+                false => gpioa_out.write(0x20_0000),
+            }
         }
     }
 }
@@ -72,3 +76,4 @@ fn bello() -> ! {
 extern "C" fn OSFault(_frame: &ExceptionFrame) -> ! {
     loop {}
 }
+

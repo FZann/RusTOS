@@ -33,7 +33,6 @@ pub struct Preemptive<'p> {
     processes: [Option<&'p dyn Process>; 32],
     schedulable: BitVec,
     sleeping: BitVec,
-    ticks: Ticks,
 }
 
 unsafe impl<'p> Sync for Preemptive<'p> {}
@@ -49,7 +48,6 @@ impl<'p> Preemptive<'p> {
             processes: [Self::NONE; 32],
             schedulable: BitVec::new(),
             sleeping: BitVec::new(),
-            ticks: 0,
         }
     }
 }
@@ -82,10 +80,9 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         }
     }
 
-    /// I ticks di sleeping di un task non rappresentano i tick rimanenti alla scadenza,
-    /// ma il valore assoluto che il sistema deve raggiungere per riattivare il processo.
-    /// Questo elimina tutte le operazioni di sottrazione a tutti i contatori dei ticks di
-    /// tutti i processi.
+    /// I tick di sleeping di un task vengono diminuiti ad ogni tick
+    /// di sistema, fino all'azzeramento. 
+    /// A questo punto il task torna schedulabile.
     fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
         if let Some(pcb) = self.processes[prio] {
             pcb.set_state(ProcessState::Sleeping(ticks));
@@ -95,8 +92,6 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     }
 
     fn inc_system_ticks(&mut self) {
-        self.ticks = self.ticks + 1;
-
         let mut sleeping = self.sleeping;
         while let Ok(id) = sleeping.first_set() {
             let task = self.processes[id].unwrap();
