@@ -115,7 +115,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
                 cortex_m::peripheral::SCB::set_pendsv();
             },
             // Non c'è un task da schedulare!
-            (Err(_), None) => {
+            (Err(_), _) => {
                 // TODO: inserire lo sleep automatico, magari senza idle task
                 panic!("CASINO ATROCE! Siamo senza idle task.");
                 // crate::kernel::sleep_cpu();
