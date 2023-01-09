@@ -114,11 +114,15 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
                 self.next = self.processes[id];
                 cortex_m::peripheral::SCB::set_pendsv();
             },
-            _ => {
+            // Non c'è un task da schedulare!
+            (Err(_), None) => {
                 // TODO: inserire lo sleep automatico, magari senza idle task
                 panic!("CASINO ATROCE! Siamo senza idle task.");
                 // crate::kernel::sleep_cpu();
-            }
+            },
+            // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
+            // Quindi usciamo senza fare nulla
+            _ => {},
         }
     }
 
