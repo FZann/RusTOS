@@ -127,10 +127,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     }
 
     fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()> {
-        match (process.handle(), process.sp()) {
-            (Some(_), Some(_)) => (),
-            (_, _) => panic!("Processo non setuppato!"),
-        };
+        process.setup();
 
         let prio = process.prio() as usize;
 

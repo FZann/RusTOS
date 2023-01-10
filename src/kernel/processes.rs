@@ -2,7 +2,7 @@ use core::cell::Cell;
 
 use crate::kernel::Ticks;
 
-pub type TaskHandle = Option<fn() -> !>;
+pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
 
 #[derive(Clone, Copy)]
@@ -15,12 +15,14 @@ pub enum ProcessState {
 }
 
 pub trait Process {
-    fn handle(&self) -> TaskHandle;
+    fn setup(&mut self);
+    
     fn prio(&self) -> u8;
-
+    fn sp(&self) -> StackPointer;
+    fn handle(&self) -> TaskHandle;
+    
     fn set_state(&self, state: ProcessState);
     fn get_state(&self) -> ProcessState;
-    fn sp(&self) -> StackPointer;
     fn decrement_ticks(&self);
 }
 
@@ -40,7 +42,7 @@ pub struct Task<'sp, const WORDS: usize> {
 }
 
 impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
-    pub const fn allocate(prio: u8) -> Self {
+    pub const fn new(task: TaskHandle, prio: u8) -> Self {
         if WORDS <= 32 {
             panic!("Stack troppo piccola!");
         };
@@ -48,17 +50,17 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
         Self {
             sp: None,
             stack: [0; WORDS],
-            task: None,
+            task,
             prio,
             state: Cell::new(ProcessState::Idle),
         }
     }
+}
 
-    pub fn setup(&'sp mut self, task: fn() -> !) -> &Self {
-        self.task = Some(task);
-
+impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
+    fn setup(&mut self) {
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
-        self.stack[WORDS - 02] = task as usize; // PC
+        self.stack[WORDS - 02] = self.task as usize; // PC
         self.stack[WORDS - 03] = 0xFFFFFFFD; // LR
         self.stack[WORDS - 04] = 0xC; // R12
         self.stack[WORDS - 05] = 0x3; // R3
@@ -76,11 +78,8 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
         self.stack[WORDS - 16] = 0x4; // R4
 
         self.sp = Some(&self.stack[WORDS - 16]);
-        self
     }
-}
 
-impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
     fn handle(&self) -> TaskHandle {
         self.task
     }
