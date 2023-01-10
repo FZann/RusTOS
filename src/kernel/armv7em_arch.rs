@@ -240,7 +240,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         "ldr    r0, [r2]",        // Get value of StackPointer
         "ldmfd  r0!, {{r4-r11}}", // Load Context
         "str    r0, [r2]",        // Saves new Stackpointer value in &PCB
-        "msr	psp, r0",            // Moves r0 in PSP
+        "msr	psp, r0",         // Moves r0 in PSP
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",

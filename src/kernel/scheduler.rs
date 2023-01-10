@@ -13,7 +13,7 @@ pub trait Scheduler<'p> {
 
     fn inc_system_ticks(&mut self);
     fn schedule_next(&mut self);
-    fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()>;
+    fn add_process(&mut self, process: &'p mut dyn Process) -> Result<(), ()>;
     fn remove_process(&mut self, prio: usize) -> Result<(), ()>;
 }
 
@@ -126,14 +126,13 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         }
     }
 
-    fn add_process(&mut self, process: &'p dyn Process) -> Result<(), ()> {
-        process.setup();
-
+    fn add_process(&mut self, process: &'p mut dyn Process) -> Result<(), ()> {
         let prio = process.prio() as usize;
 
         match self.processes[prio] {
             Some(_) => Err(()),
             None => {
+                process.setup();
                 self.processes[prio] = Some(process);
                 self.schedulable.set(prio);
                 Ok(())

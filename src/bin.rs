@@ -17,9 +17,9 @@ static mut QUEUE: Queue<bool, 8> = Queue::allocate();
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        SCHEDULER.add_process(&IDLE);
-        SCHEDULER.add_process(&CIAO);
-        SCHEDULER.add_process(&BELLO);
+        SCHEDULER.add_process(&mut IDLE);
+        SCHEDULER.add_process(&mut CIAO);
+        SCHEDULER.add_process(&mut BELLO);
         SystemCall(SysCallType::StartScheduler);
         unreachable!();
     }
@@ -36,9 +36,10 @@ fn ciao() -> ! {
     loop {
         c += 1;
         unsafe {
-            QUEUE.push(true);
-            sleep(500);
-            QUEUE.push(false);
+            //QUEUE.push(true);
+            //sleep(500);
+            //QUEUE.push(false);
+            SEM.release();
             sleep(500);
         }
         
@@ -57,12 +58,15 @@ fn bello() -> ! {
         gpioa.write(gpioa.read() | 1 << 10);
         let gpioa_out = gpioa.add(6);
 
+        let mut led_state = false;
         loop {
-            let led_state = QUEUE.pop();
+            //let led_state = QUEUE.pop();
+            led_state = !led_state;
             match led_state {
                 true => gpioa_out.write(0x20),
                 false => gpioa_out.write(0x20_0000),
             }
+            SEM.wait();
         }
     }
 }

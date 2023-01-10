@@ -1,4 +1,4 @@
-use core::cell::Cell;
+use core::{cell::Cell, mem::transmute};
 
 use crate::kernel::Ticks;
 
@@ -16,7 +16,6 @@ pub enum ProcessState {
 
 pub trait Process {
     fn setup(&mut self);
-    
     fn prio(&self) -> u8;
     fn sp(&self) -> StackPointer;
     fn handle(&self) -> TaskHandle;
@@ -77,7 +76,10 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
         self.stack[WORDS - 15] = 0x5; // R5
         self.stack[WORDS - 16] = 0x4; // R4
 
-        self.sp = Some(&self.stack[WORDS - 16]);
+        let sp = &self.stack[WORDS - 16];
+        unsafe {
+            self.sp = Some(transmute(sp));
+        }
     }
 
     fn handle(&self) -> TaskHandle {
