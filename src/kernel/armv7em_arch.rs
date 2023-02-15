@@ -1,3 +1,4 @@
+use cortex_m::interrupt::InterruptNumber;
 use cortex_m::peripheral::{self, Peripherals};
 
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
@@ -307,7 +308,12 @@ pub extern "C" fn SVCall() {
             // TODO: impostare le priorità degli interrupt. 
             // SVC deve avere prio massima
             // PendSV, invece, la prio minima
-            let mut _nvic = &p.NVIC;
+            let nvic = &mut p.NVIC;
+            unsafe { 
+                nvic.set_priority(Interrupts::SVCall, 0);
+                nvic.set_priority(Interrupts::PendSV, 255);
+                nvic.set_priority(Interrupts::SysTick, 1);
+             }
 
             sched.start();
         }
@@ -329,5 +335,18 @@ pub extern "C" fn SVCall() {
                 sched.schedule_next();
             }
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Interrupts {
+    SVCall = 11,
+    PendSV = 14,
+    SysTick = 15,
+}
+
+unsafe impl InterruptNumber for Interrupts {
+    fn number(self) -> u16 {
+        self as u16 
     }
 }

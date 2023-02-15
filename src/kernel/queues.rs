@@ -24,10 +24,10 @@ where
             push_id: 0,
         }
     }
-
+    
     pub fn push(&mut self, object: T) {
         // Andiamo in attesa col semaforo, perché la coda è piena
-        while self.buf[self.push_id + 1].is_some() {
+        while self.buf[self.push_id].is_some() {
             self.sem.wait();
         }
 
@@ -55,4 +55,5 @@ where
 
         result
     }
+    
 }

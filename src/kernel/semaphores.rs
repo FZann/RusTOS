@@ -1,41 +1,39 @@
 use core::cell::Cell;
-
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use crate::kernel::BitVec;
+use super::processes::Process;
 
-pub struct Semaphore {
-    locked: Cell<BitVec>,
+
+pub struct BinSem<'p> {
+    locked: Option<&'p dyn Process>,
 }
 
-impl Semaphore {
+impl<'p> BinSem<'p> {
     pub const fn new() -> Self {
-        Semaphore {
-            locked: Cell::new(BitVec::new()),
+        Self {
+            locked: None,
         }
     }
 
-    pub fn wait(&self) {
+    pub fn wait(&mut self) {
+        if self.locked.is_some() {
+            panic!("Doppio lock!");
+        }
         let sched = unsafe { &mut SCHEDULER };
-        let prio = sched.running.unwrap().prio() as usize;
-
-        let mut locked = self.locked.get();
-        locked.set(prio);
-        self.locked.set(locked);
-
-        sched.process_stop(prio);
+        self.locked = sched.running;
+        sched.process_stop(sched.running.unwrap().prio() as usize);
         sched.schedule_next();
     }
 
-    pub fn release(&self) {
-        let sched = unsafe { &mut SCHEDULER };
-        let mut locked = self.locked.get();
-
-        if let Ok(prio) = locked.first_set() {
-            locked.clear(prio);
-            self.locked.set(locked);
-
-            sched.process_idle(prio);
-            sched.schedule_next();
+    pub fn release(&mut self) {
+        if self.locked.is_none() {
+            panic!("Release a vuoto!");
         }
+
+        let sched = unsafe { &mut SCHEDULER };
+        sched.process_idle(self.locked.unwrap().prio() as usize);
+        self.locked = None;
+        sched.schedule_next();
     }
+
+    
 }
