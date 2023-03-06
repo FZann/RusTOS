@@ -7,7 +7,7 @@ mod armv7em_arch;
 
 // Aliasing per poter usare la compilazione condizionale
 pub use self::armv7em_arch::load_first_process;
-pub use self::armv7em_arch::sleep_cpu;
+pub use self::armv7em_arch::idle_task;
 pub use self::armv7em_arch::svc as SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
 

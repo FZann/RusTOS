@@ -1,39 +1,49 @@
-use core::cell::Cell;
+use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use super::processes::Process;
+use crate::kernel::BitVec;
 
+pub struct VecSemaphore {
+    locked: BitVec,
+}
 
-pub struct BinSem<'p> {
+impl VecSemaphore {
+    pub const fn new() -> Self {
+        Self {
+            locked: BitVec::new(),
+        }
+    }
+
+    pub fn wait(&self) {}
+
+    pub fn release(&self) {}
+}
+
+pub struct Semaphore<'p> {
     locked: Option<&'p dyn Process>,
 }
 
-impl<'p> BinSem<'p> {
+impl<'p> Semaphore<'p> {
     pub const fn new() -> Self {
-        Self {
-            locked: None,
-        }
+        Self { locked: None }
     }
 
     pub fn wait(&mut self) {
         if self.locked.is_some() {
-            panic!("Doppio lock!");
+            return;
         }
+        
         let sched = unsafe { &mut SCHEDULER };
         self.locked = sched.running;
-        sched.process_stop(sched.running.unwrap().prio() as usize);
-        sched.schedule_next();
+        sched.running_stop();
     }
 
     pub fn release(&mut self) {
         if self.locked.is_none() {
-            panic!("Release a vuoto!");
+            return;
         }
 
         let sched = unsafe { &mut SCHEDULER };
-        sched.process_idle(self.locked.unwrap().prio() as usize);
+        sched.process_idle(self.locked.unwrap().prio());
         self.locked = None;
-        sched.schedule_next();
     }
-
-    
 }

@@ -1,16 +1,19 @@
-use crate::kernel::processes::{Process, ProcessState};
+use crate::kernel::processes::Process;
 use crate::kernel::{BitVec, SysCallType, Ticks};
+
+use super::processes::Task;
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
-
+pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 0);
 
 pub trait Scheduler<'p> {
     fn start(&mut self) -> !;
 
-    fn process_idle(&mut self, prio: usize);
-    fn process_stop(&mut self, prio: usize);
-    fn process_sleep(&mut self, prio: usize, ticks: Ticks);
+    fn running_id(&self) -> usize;
+    fn running_idle(&mut self);
+    fn running_stop(&mut self);
+    fn running_sleep(&mut self, ticks: Ticks);
 
     fn inc_system_ticks(&mut self);
     fn schedule_next(&mut self);
@@ -39,16 +42,14 @@ pub struct Preemptive<'p> {
 unsafe impl<'p> Sync for Preemptive<'p> {}
 
 impl<'p> Preemptive<'p> {
-    const NONE: Option<&'p dyn Process> = None;
-
     pub const fn new() -> Self {
         Self {
-            running: None,
-            next: None,
             sys_call: SysCallType::Nop,
-            processes: [Self::NONE; 32],
+            processes: [None; 32],
             schedulable: BitVec::new(),
             sleeping: BitVec::new(),
+            running: None,
+            next: None,
         }
     }
 }
@@ -56,8 +57,10 @@ impl<'p> Preemptive<'p> {
 impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn start(&mut self) -> ! {
         /* Scheduling first process */
-        let id = self.schedulable.first_set().unwrap();
-        self.running = self.processes[id];
+        self.running = match self.schedulable.first_set() {
+            Ok(id) => self.processes[id],
+            Err(_) => unsafe {Some(&IDLE_TASK)},
+        };
 
         unsafe {
             crate::kernel::load_first_process();
@@ -65,39 +68,40 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         }
     }
 
-    fn process_idle(&mut self, prio: usize) {
-        if let Some(pcb) = self.processes[prio] {
-            pcb.set_state(ProcessState::Idle);
-            self.schedulable.set(prio);
-            self.sleeping.clear(prio);
-        }
+    fn running_id(&self) -> usize {
+        self.running.unwrap().prio()
     }
 
-    fn process_stop(&mut self, prio: usize) {
-        if let Some(pcb) = self.processes[prio] {
-            pcb.set_state(ProcessState::Stopped);
-            self.schedulable.clear(prio);
-            self.sleeping.clear(prio);
-        }
+    fn running_idle(&mut self) {
+        let prio = self.running_id();
+        self.schedulable.set(prio);
+        self.sleeping.clear(prio);
+        self.schedule_next();
+    }
+
+    fn running_stop(&mut self) {
+        let prio = self.running_id();
+        self.schedulable.clear(prio);
+        self.sleeping.clear(prio);
+        self.schedule_next();
+    }
+
+    fn running_sleep(&mut self, ticks: Ticks) {
+        let prio = self.running_id();
+        self.running.map(|pcb| pcb.set_ticks(ticks));
+        self.schedulable.clear(prio);
+        self.sleeping.set(prio);
+        self.schedule_next();
     }
 
     /// I tick di sleeping di un task vengono diminuiti ad ogni tick
-    /// di sistema, fino all'azzeramento. 
+    /// di sistema, fino all'azzeramento.
     /// A questo punto il task torna schedulabile.
-    fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
-        if let Some(pcb) = self.processes[prio] {
-            pcb.set_state(ProcessState::Sleeping(ticks));
-            self.schedulable.clear(prio);
-            self.sleeping.set(prio);
-        }
-    }
-
     fn inc_system_ticks(&mut self) {
         let mut sleeping = self.sleeping;
         while let Ok(id) = sleeping.first_set() {
             let task = self.processes[id].unwrap();
-            task.decrement_ticks();
-            if let ProcessState::Idle = task.get_state() {
+            if task.decrement_ticks() == 0 {
                 self.schedulable.set(id);
                 self.sleeping.clear(id);
             }
@@ -110,20 +114,20 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
-        match (self.schedulable.first_set(), self.running) {
-            (Ok(id), Some(run)) if run.prio() != id as u8 => {
+        match (self.schedulable.first_set(), self.running_id()) {
+            (Ok(id), run) if id != run  => {
                 self.next = self.processes[id];
                 cortex_m::peripheral::SCB::set_pendsv();
-            },
+            }
+
             // Non c'è un task da schedulare!
             (Err(_), _) => {
-                // TODO: inserire lo sleep automatico, magari senza idle task
-                panic!("CASINO ATROCE! Siamo senza idle task.");
-                // crate::kernel::sleep_cpu();
-            },
+                self.next = unsafe {Some(&IDLE_TASK)};
+                cortex_m::peripheral::SCB::set_pendsv();
+            }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla
-            _ => {},
+            _ => {}
         }
     }
 

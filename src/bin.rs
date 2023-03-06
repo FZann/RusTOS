@@ -4,31 +4,23 @@
 use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
-use RusTOS::kernel::semaphores::{Semaphore, BinSem};
-use RusTOS::kernel::{sleep, sleep_cpu, ExceptionFrame, SysCallType, SystemCall};
+use RusTOS::kernel::semaphores::{Semaphore, VecSemaphore};
+use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall};
 
-static mut IDLE: Task<33> = Task::new(idle_task, 0);
-static mut CIAO: Task<256> = Task::new(ciao, 1);
-static mut BELLO: Task<256> = Task::new(bello, 2);
+static mut CIAO: Task<256> = Task::new(ciao, 0);
+static mut BELLO: Task<256> = Task::new(bello, 1);
 //static mut SEM: Semaphore = Semaphore::new();
-static mut SEM: BinSem = BinSem::new();
+static mut SEM: Semaphore = Semaphore::new();
 //static mut QUEUE: Queue<u8, 8> = Queue::allocate();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        SCHEDULER.add_process(&mut IDLE);
         SCHEDULER.add_process(&mut CIAO);
         SCHEDULER.add_process(&mut BELLO);
         SystemCall(SysCallType::StartScheduler);
         unreachable!();
-    }
-}
-
-fn idle_task() -> ! {
-    loop {
-        sleep_cpu();
     }
 }
 
@@ -43,7 +35,6 @@ fn ciao() -> ! {
             SEM.release();
             sleep(500);
         }
-        
     }
 }
 
@@ -66,7 +57,6 @@ fn bello() -> ! {
             match led_state {
                 true => gpioa_out.write(0x20),
                 false => gpioa_out.write(0x20_0000),
-                _ => {},
             }
             SEM.wait();
         }
@@ -78,4 +68,3 @@ fn bello() -> ! {
 extern "C" fn OSFault(_frame: &ExceptionFrame) -> ! {
     loop {}
 }
-

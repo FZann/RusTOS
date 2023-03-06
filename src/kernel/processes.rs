@@ -1,28 +1,22 @@
-use core::{cell::Cell, mem::transmute};
+use core::{mem::transmute, cell::Cell};
 
 use crate::kernel::Ticks;
 
 pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
 
-#[derive(Clone, Copy)]
-pub enum ProcessState {
-    Idle,
-    Running,
-    Stopped,
-    Sleeping(Ticks),
-    Waiting,
-}
-
 pub trait Process {
     fn setup(&mut self);
-    fn prio(&self) -> u8;
+    fn prio(&self) -> usize;
     fn sp(&self) -> StackPointer;
     fn handle(&self) -> TaskHandle;
-    
-    fn set_state(&self, state: ProcessState);
-    fn get_state(&self) -> ProcessState;
-    fn decrement_ticks(&self);
+
+    fn set_ticks(&self, ticks: Ticks);
+    fn decrement_ticks(&self) -> Ticks;
+
+    fn idle(&mut self);
+    fn stop(&mut self);
+    fn sleep(&mut self, ticks: Ticks);
 }
 
 /// **PCB**
@@ -36,7 +30,7 @@ pub struct Task<'sp, const WORDS: usize> {
     /* !!! --------------------- !!! */
     stack: [usize; WORDS],
     task: TaskHandle,
-    state: Cell<ProcessState>,
+    ticks: Cell<Ticks>,
     prio: u8,
 }
 
@@ -51,7 +45,7 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
             stack: [0; WORDS],
             task,
             prio,
-            state: Cell::new(ProcessState::Idle),
+            ticks: Cell::new(0),
         }
     }
 }
@@ -86,30 +80,35 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
         self.task
     }
 
-    fn prio(&self) -> u8 {
-        self.prio
+    fn prio(&self) -> usize {
+        self.prio as usize
     }
 
     fn sp(&self) -> StackPointer {
         self.sp
     }
 
-    fn set_state(&self, state: ProcessState) {
-        self.state.set(state);
+    fn set_ticks(&self, ticks: Ticks) {
+        self.ticks.set(ticks);
     }
 
-    fn get_state(&self) -> ProcessState {
-        self.state.get()
+    fn decrement_ticks(&self) -> Ticks {
+        match self.ticks.get() {
+            0 => (),
+            _ => self.set_ticks(self.ticks.get() - 1),
+        };
+        self.ticks.get()
     }
 
-    fn decrement_ticks(&self) {
-        if let ProcessState::Sleeping(ticks) = self.state.get() {
-            let ticks = ticks - 1;
-            if ticks == 0 {
-                self.state.set(ProcessState::Idle);
-            } else {
-                self.state.set(ProcessState::Sleeping(ticks));
-            }
-        }
+    fn idle(&mut self) {
+        todo!()
+    }
+
+    fn stop(&mut self) {
+        todo!()
+    }
+
+    fn sleep(&mut self, ticks: Ticks) {
+        self.set_ticks(ticks);
     }
 }

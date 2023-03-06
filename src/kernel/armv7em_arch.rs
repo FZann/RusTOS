@@ -252,9 +252,9 @@ pub unsafe extern "C" fn load_first_process() -> ! {
 
 #[no_mangle]
 #[inline(always)]
-pub fn sleep_cpu() {
+pub fn idle_task() -> ! {
     unsafe {
-        asm!("wfi");
+        asm!("wfi", options(noreturn));
     }
 }
 
@@ -297,7 +297,7 @@ pub extern "C" fn SVCall() {
         SysCallType::Nop => (),
         SysCallType::StartScheduler => {
             let mut p = Peripherals::take().unwrap();
-            
+
             let sys_tick = &mut p.SYST;
             sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
             let reload = peripheral::SYST::get_ticks_per_10ms();
@@ -305,36 +305,19 @@ pub extern "C" fn SVCall() {
             sys_tick.enable_interrupt();
             sys_tick.enable_counter();
 
-            // TODO: impostare le priorità degli interrupt. 
-            // SVC deve avere prio massima
-            // PendSV, invece, la prio minima
             let nvic = &mut p.NVIC;
-            unsafe { 
+            unsafe {
                 nvic.set_priority(Interrupts::SVCall, 0);
                 nvic.set_priority(Interrupts::PendSV, 255);
                 nvic.set_priority(Interrupts::SysTick, 1);
-             }
+            }
 
             sched.start();
         }
-        SysCallType::ProcessIdle => {
-            if let Some(running) = sched.running {
-                sched.process_idle(running.prio() as usize);
-                sched.schedule_next();
-            }
-        }
-        SysCallType::ProcessStop => {
-            if let Some(running) = sched.running {
-                sched.process_stop(running.prio() as usize);
-                sched.schedule_next();
-            }
-        }
-        SysCallType::ProcessSleep(ticks) => {
-            if let Some(running) = sched.running {
-                sched.process_sleep(running.prio() as usize, ticks);
-                sched.schedule_next();
-            }
-        }
+
+        SysCallType::ProcessIdle => sched.running_idle(),
+        SysCallType::ProcessStop => sched.running_stop(),
+        SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
     }
 }
 
@@ -347,6 +330,6 @@ enum Interrupts {
 
 unsafe impl InterruptNumber for Interrupts {
     fn number(self) -> u16 {
-        self as u16 
+        self as u16
     }
 }
