@@ -253,8 +253,10 @@ pub unsafe extern "C" fn load_first_process() -> ! {
 #[no_mangle]
 #[inline(always)]
 pub fn idle_task() -> ! {
-    unsafe {
-        asm!("wfi", options(noreturn));
+    loop {
+        unsafe {
+            asm!("wfi");
+        }
     }
 }
 

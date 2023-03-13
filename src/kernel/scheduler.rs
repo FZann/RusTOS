@@ -1,7 +1,6 @@
-use crate::kernel::processes::Process;
+use crate::kernel::processes::{Task, Process};
 use crate::kernel::{BitVec, SysCallType, Ticks};
 
-use super::processes::Task;
 
 #[no_mangle]
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
@@ -14,6 +13,10 @@ pub trait Scheduler<'p> {
     fn running_idle(&mut self);
     fn running_stop(&mut self);
     fn running_sleep(&mut self, ticks: Ticks);
+
+    fn process_idle(&mut self, prio: usize);
+    fn process_stop(&mut self, prio: usize);
+    fn process_sleep(&mut self, prio: usize, ticks: Ticks);
 
     fn inc_system_ticks(&mut self);
     fn schedule_next(&mut self);
@@ -73,25 +76,40 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     }
 
     fn running_idle(&mut self) {
-        let prio = self.running_id();
-        self.schedulable.set(prio);
-        self.sleeping.clear(prio);
-        self.schedule_next();
+        self.process_idle(self.running_id());
     }
 
     fn running_stop(&mut self) {
-        let prio = self.running_id();
-        self.schedulable.clear(prio);
-        self.sleeping.clear(prio);
-        self.schedule_next();
+        self.process_stop(self.running_id());
     }
 
     fn running_sleep(&mut self, ticks: Ticks) {
-        let prio = self.running_id();
-        self.running.map(|pcb| pcb.set_ticks(ticks));
-        self.schedulable.clear(prio);
-        self.sleeping.set(prio);
-        self.schedule_next();
+        self.process_sleep(self.running_id(), ticks);
+    }
+
+    fn process_idle(&mut self, prio: usize) {
+        if self.processes[prio].is_some() {
+            self.schedulable.set(prio);
+            self.sleeping.clear(prio);
+            self.schedule_next();
+        }
+    }
+
+    fn process_stop(&mut self, prio: usize) {
+        if self.processes[prio].is_some() {
+            self.schedulable.clear(prio);
+            self.sleeping.clear(prio);
+            self.schedule_next();
+        }
+    }
+
+    fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
+        if let Some(pcb) = self.processes[prio] {
+            self.schedulable.clear(prio);
+            self.sleeping.set(prio);
+            pcb.set_ticks(ticks);
+            self.schedule_next();
+        }
     }
 
     /// I tick di sleeping di un task vengono diminuiti ad ogni tick

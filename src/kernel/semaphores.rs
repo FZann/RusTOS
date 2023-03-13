@@ -38,12 +38,10 @@ impl<'p> Semaphore<'p> {
     }
 
     pub fn release(&mut self) {
-        if self.locked.is_none() {
-            return;
+        if let Some(locked) = self.locked {
+            let sched = unsafe { &mut SCHEDULER };
+            sched.process_idle(locked.prio());
+            self.locked = None;
         }
-
-        let sched = unsafe { &mut SCHEDULER };
-        sched.process_idle(self.locked.unwrap().prio());
-        self.locked = None;
     }
 }
