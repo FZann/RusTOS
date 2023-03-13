@@ -1,10 +1,14 @@
 use crate::kernel::processes::{Task, Process};
 use crate::kernel::{BitVec, SysCallType, Ticks};
 
+use cortex_m::interrupt::*;
+
 
 #[no_mangle]
+//pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
 pub static mut SCHEDULER: Preemptive = Preemptive::new();
-pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 0);
+pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
+
 
 pub trait Scheduler<'p> {
     fn start(&mut self) -> !;
@@ -64,8 +68,9 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
             Ok(id) => self.processes[id],
             Err(_) => unsafe {Some(&IDLE_TASK)},
         };
-
+        
         unsafe {
+            IDLE_TASK.setup();
             crate::kernel::load_first_process();
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
@@ -132,14 +137,14 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
-        match (self.schedulable.first_set(), self.running_id()) {
-            (Ok(id), run) if id != run  => {
-                self.next = self.processes[id];
+        match (self.running_id(), self.schedulable.first_set()) {
+            (run, Ok(next)) if run != next  => {
+                self.next = self.processes[next];
                 cortex_m::peripheral::SCB::set_pendsv();
             }
 
             // Non c'è un task da schedulare!
-            (Err(_), _) => {
+            (_, Err(_)) => {
                 self.next = unsafe {Some(&IDLE_TASK)};
                 cortex_m::peripheral::SCB::set_pendsv();
             }
@@ -150,7 +155,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     }
 
     fn add_process(&mut self, process: &'p mut dyn Process) -> Result<(), ()> {
-        let prio = process.prio() as usize;
+        let prio = process.prio();
 
         match self.processes[prio] {
             Some(_) => Err(()),

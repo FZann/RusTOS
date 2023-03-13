@@ -13,9 +13,19 @@ impl VecSemaphore {
         }
     }
 
-    pub fn wait(&self) {}
+    pub fn wait(&mut self) {
+        let sched = unsafe { &mut SCHEDULER };
+        self.locked.set(sched.running_id());
+        sched.running_stop();
+    }
 
-    pub fn release(&self) {}
+    pub fn release(&mut self) {
+        if let Ok(id) = self.locked.first_set() {
+            let sched = unsafe { &mut SCHEDULER };
+            self.locked.clear(id);
+            sched.process_idle(id);
+        }
+    }
 }
 
 pub struct Semaphore<'p> {
@@ -40,8 +50,9 @@ impl<'p> Semaphore<'p> {
     pub fn release(&mut self) {
         if let Some(locked) = self.locked {
             let sched = unsafe { &mut SCHEDULER };
-            sched.process_idle(locked.prio());
+            let prio = locked.prio();
             self.locked = None;
+            sched.process_idle(prio);
         }
     }
 }

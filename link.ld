@@ -18,6 +18,7 @@ ENTRY(__ENTRY);
 SECTIONS 
 {
     __stack_start = ORIGIN(STACK) + SIZEOF(STACK);
+    PROVIDE(ld_stack_start = __stack_start);
 
     .vector_table : AT(ORIGIN(FLASH)) {
         LONG(__stack_start);
@@ -25,7 +26,6 @@ SECTIONS
         KEEP(*(.vector_table_interrupts));
         KEEP(*(.static_kernel_variables));
     } > FLASH 
-    PROVIDE(ld_stack_start = __stack_start);
 
     __vector_end = ADDR(.vector_table) + SIZEOF(.vector_table);
 

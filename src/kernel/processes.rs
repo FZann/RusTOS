@@ -23,18 +23,19 @@ pub trait Process {
 ///
 /// Process Control Block per un dispositivo ARM Cortex-M4.
 #[repr(C)]
-pub struct Task<'sp, const WORDS: usize> {
+pub struct Task<'task, const WORDS: usize> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    sp: StackPointer<'sp>,
+    sp: StackPointer<'task>,
     /* !!! --------------------- !!! */
     stack: [usize; WORDS],
     task: TaskHandle,
     ticks: Cell<Ticks>,
     prio: u8,
+    //sched: Option<*mut dyn Scheduler<'sp>>,
 }
 
-impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
+impl<'task, const WORDS: usize> Task<'task, WORDS> {
     pub const fn new(task: TaskHandle, prio: u8) -> Self {
         if WORDS <= 32 {
             panic!("Stack troppo piccola!");
@@ -46,11 +47,12 @@ impl<'sp, const WORDS: usize> Task<'sp, WORDS> {
             task,
             prio,
             ticks: Cell::new(0),
+            //sched: None,
         }
     }
 }
 
-impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
+impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     fn setup(&mut self) {
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
         self.stack[WORDS - 02] = self.task as usize; // PC
@@ -72,6 +74,7 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
 
         let sp = &self.stack[WORDS - 16];
         unsafe {
+            //self.sched = Some(transmute(sched));
             self.sp = Some(transmute(sp));
         }
     }
@@ -101,14 +104,18 @@ impl<'sp, const WORDS: usize> Process for Task<'sp, WORDS> {
     }
 
     fn idle(&mut self) {
-        todo!()
+        //let sched = unsafe {&mut (*self.sched.unwrap())};
+        //sched.process_idle(self.prio());
     }
 
     fn stop(&mut self) {
-        todo!()
+        //let sched = unsafe {&mut (*self.sched.unwrap())};
+        //sched.process_stop(self.prio());
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
+        //let sched = unsafe {&mut (*self.sched.unwrap())};
+        //sched.process_sleep(self.prio(), ticks);
     }
 }

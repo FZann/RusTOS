@@ -1,9 +1,12 @@
-use cortex_m::interrupt::InterruptNumber;
-use cortex_m::peripheral::{self, Peripherals};
+use core::arch::asm;
 
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 use crate::kernel::SysCallType;
-use core::arch::asm;
+
+use cortex_m::interrupt::*;
+use cortex_m::peripheral::{self, Peripherals};
+
+
 
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
@@ -266,10 +269,10 @@ pub fn svc(sys_call: SysCallType) {
         SCHEDULER.sys_call = sys_call;
         match SCHEDULER.sys_call {
             SysCallType::Nop => (),
-            SysCallType::ProcessIdle => asm!("svc    1"),
+            SysCallType::ProcessIdle =>     asm!("svc    1"),
             SysCallType::ProcessSleep(_) => asm!("svc    2"),
-            SysCallType::ProcessStop => asm!("svc    3"),
-            SysCallType::StartScheduler => asm!("svc    4"),
+            SysCallType::ProcessStop =>     asm!("svc    3"),
+            SysCallType::StartScheduler =>  asm!("svc    4"),
         }
     }
 }
@@ -310,8 +313,8 @@ pub extern "C" fn SVCall() {
             let nvic = &mut p.NVIC;
             unsafe {
                 nvic.set_priority(Interrupts::SVCall, 0);
-                nvic.set_priority(Interrupts::PendSV, 255);
                 nvic.set_priority(Interrupts::SysTick, 1);
+                nvic.set_priority(Interrupts::PendSV, 255);
             }
 
             sched.start();

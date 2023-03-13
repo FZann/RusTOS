@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::processes::Task;
+use RusTOS::kernel::processes::{Task, Process};
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::{Semaphore, VecSemaphore};
@@ -11,7 +11,7 @@ static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
 //static mut SEM: Semaphore = Semaphore::new();
 static mut SEM: Semaphore = Semaphore::new();
-//static mut QUEUE: Queue<u8, 8> = Queue::allocate();
+static mut QUEUE: Queue<u8, 8> = Queue::allocate();
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -29,10 +29,10 @@ fn ciao() -> ! {
     loop {
         c += 1;
         unsafe {
-            //QUEUE.push(1);
+            QUEUE.push(1);
             sleep(500);
-            //QUEUE.push(0);
-            SEM.release();
+            QUEUE.push(0);
+            // SEM.release();
             sleep(500);
         }
     }
@@ -50,15 +50,15 @@ fn bello() -> ! {
         gpioa.write(gpioa.read() | 1 << 10);
         let gpioa_out = gpioa.add(6);
 
-        let mut led_state = false;
+        //let mut led_state = false;
         loop {
-            //let led_state = QUEUE.pop();
-            led_state = !led_state;
+            let led_state = QUEUE.pop() == 1;
+            //led_state = !led_state;
             match led_state {
                 true => gpioa_out.write(0x20),
                 false => gpioa_out.write(0x20_0000),
             }
-            SEM.wait();
+            //SEM.wait();
         }
     }
 }

@@ -6,6 +6,6 @@
 	],
 	"settings": {
 		"cortex-debug.registerUseNaturalFormat": false,
-		"cortex-debug.variableUseNaturalFormat": true
+		"cortex-debug.variableUseNaturalFormat": false
 	}
 }
