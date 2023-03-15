@@ -6,8 +6,6 @@ use crate::kernel::SysCallType;
 use cortex_m::interrupt::*;
 use cortex_m::peripheral::{self, Peripherals};
 
-
-
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
 #[repr(C)]
@@ -131,9 +129,10 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    let sched = unsafe { &mut SCHEDULER };
-    sched.inc_system_ticks();
-    sched.schedule_next();
+    SCHEDULER.crit_sec(|sched| {
+        sched.inc_system_ticks();
+        sched.schedule_next();
+    });
 }
 
 #[naked]
@@ -265,9 +264,11 @@ pub fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
+    SCHEDULER.crit_sec(|sched| {
+        sched.sys_call = sys_call;
+    });
     unsafe {
-        SCHEDULER.sys_call = sys_call;
-        match SCHEDULER.sys_call {
+        match sys_call {
             SysCallType::Nop => (),
             SysCallType::ProcessIdle =>     asm!("svc    1"),
             SysCallType::ProcessSleep(_) => asm!("svc    2"),
@@ -297,33 +298,34 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    let sched = unsafe { &mut SCHEDULER };
-    match sched.sys_call {
-        SysCallType::Nop => (),
-        SysCallType::StartScheduler => {
-            let mut p = Peripherals::take().unwrap();
-
-            let sys_tick = &mut p.SYST;
-            sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
-            let reload = peripheral::SYST::get_ticks_per_10ms();
-            sys_tick.set_reload(reload);
-            sys_tick.enable_interrupt();
-            sys_tick.enable_counter();
-
-            let nvic = &mut p.NVIC;
-            unsafe {
-                nvic.set_priority(Interrupts::SVCall, 0);
-                nvic.set_priority(Interrupts::SysTick, 1);
-                nvic.set_priority(Interrupts::PendSV, 255);
+    SCHEDULER.crit_sec(|sched| {
+        match sched.sys_call {
+            SysCallType::Nop => (),
+            SysCallType::StartScheduler => {
+                let mut p = Peripherals::take().unwrap();
+    
+                let sys_tick = &mut p.SYST;
+                sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
+                let reload = peripheral::SYST::get_ticks_per_10ms();
+                sys_tick.set_reload(reload);
+                sys_tick.enable_interrupt();
+                sys_tick.enable_counter();
+    
+                let nvic = &mut p.NVIC;
+                unsafe {
+                    nvic.set_priority(Interrupts::SVCall, 0);
+                    nvic.set_priority(Interrupts::SysTick, 1);
+                    nvic.set_priority(Interrupts::PendSV, 255);
+                }
+    
+                sched.start();
             }
-
-            sched.start();
+    
+            SysCallType::ProcessIdle => sched.running_idle(),
+            SysCallType::ProcessStop => sched.running_stop(),
+            SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
         }
-
-        SysCallType::ProcessIdle => sched.running_idle(),
-        SysCallType::ProcessStop => sched.running_stop(),
-        SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
-    }
+    });
 }
 
 #[derive(Clone, Copy)]

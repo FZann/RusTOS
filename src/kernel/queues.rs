@@ -49,7 +49,7 @@ where
             self.tail = 0;
         }
         self.sem.release(); // Segnalazione per eventuali push in attesa
-        
+
         result
     }
 }

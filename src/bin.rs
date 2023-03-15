@@ -1,11 +1,11 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::processes::{Task, Process};
+use RusTOS::kernel::processes::{Process, Task};
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
-use RusTOS::kernel::semaphores::{Semaphore, VecSemaphore};
-use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall};
+use RusTOS::kernel::semaphores::Semaphore;
+use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, InterruptLock};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
@@ -16,12 +16,16 @@ static mut QUEUE: Queue<u8, 8> = Queue::allocate();
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
+    let mut lock = InterruptLock::new();
+    let sched = SCHEDULER.get_mut(&mut lock);
+    
     unsafe {
-        SCHEDULER.add_process(&mut CIAO);
-        SCHEDULER.add_process(&mut BELLO);
-        SystemCall(SysCallType::StartScheduler);
-        unreachable!();
+        sched.add_process(&mut CIAO);
+        sched.add_process(&mut BELLO);
     }
+
+    SystemCall(SysCallType::StartScheduler);
+    unreachable!();
 }
 
 fn ciao() -> ! {

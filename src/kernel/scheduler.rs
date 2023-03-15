@@ -1,14 +1,12 @@
-use crate::kernel::processes::{Task, Process};
+use crate::kernel::processes::{Process, Task};
 use crate::kernel::{BitVec, SysCallType, Ticks};
-
-use cortex_m::interrupt::*;
-
+use crate::kernel::ShareLock;
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
-pub static mut SCHEDULER: Preemptive = Preemptive::new();
+pub static SCHEDULER: ShareLock<Preemptive> = ShareLock::new(Preemptive::new());
+//pub static mut SCHEDULER: Preemptive = Preemptive::new();
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
-
 
 pub trait Scheduler<'p> {
     fn start(&mut self) -> !;
@@ -66,9 +64,9 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         /* Scheduling first process */
         self.running = match self.schedulable.first_set() {
             Ok(id) => self.processes[id],
-            Err(_) => unsafe {Some(&IDLE_TASK)},
+            Err(_) => unsafe { Some(&IDLE_TASK) },
         };
-        
+
         unsafe {
             IDLE_TASK.setup();
             crate::kernel::load_first_process();
@@ -121,7 +119,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     /// di sistema, fino all'azzeramento.
     /// A questo punto il task torna schedulabile.
     fn inc_system_ticks(&mut self) {
-        let mut sleeping = self.sleeping;
+        let mut sleeping = self.sleeping.clone();
         while let Ok(id) = sleeping.first_set() {
             let task = self.processes[id].unwrap();
             if task.decrement_ticks() == 0 {
@@ -138,14 +136,14 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
         match (self.running_id(), self.schedulable.first_set()) {
-            (run, Ok(next)) if run != next  => {
+            (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
                 cortex_m::peripheral::SCB::set_pendsv();
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
-                self.next = unsafe {Some(&IDLE_TASK)};
+                self.next = unsafe { Some(&IDLE_TASK) };
                 cortex_m::peripheral::SCB::set_pendsv();
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
@@ -171,6 +169,7 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
     fn remove_process(&mut self, prio: usize) -> Result<(), ()> {
         self.processes[prio].take();
         self.schedulable.clear(prio);
+        self.sleeping.clear(prio);
         Ok(())
     }
 }

@@ -1,6 +1,7 @@
-use core::{mem::transmute, cell::Cell};
-
+use core::{cell::Cell, mem::transmute};
 use crate::kernel::Ticks;
+
+use super::scheduler::{SCHEDULER, Scheduler};
 
 pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
@@ -32,7 +33,6 @@ pub struct Task<'task, const WORDS: usize> {
     task: TaskHandle,
     ticks: Cell<Ticks>,
     prio: u8,
-    //sched: Option<*mut dyn Scheduler<'sp>>,
 }
 
 impl<'task, const WORDS: usize> Task<'task, WORDS> {
@@ -47,7 +47,6 @@ impl<'task, const WORDS: usize> Task<'task, WORDS> {
             task,
             prio,
             ticks: Cell::new(0),
-            //sched: None,
         }
     }
 }
@@ -74,7 +73,6 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
 
         let sp = &self.stack[WORDS - 16];
         unsafe {
-            //self.sched = Some(transmute(sched));
             self.sp = Some(transmute(sp));
         }
     }
@@ -96,26 +94,29 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn decrement_ticks(&self) -> Ticks {
-        match self.ticks.get() {
-            0 => (),
-            _ => self.set_ticks(self.ticks.get() - 1),
-        };
-        self.ticks.get()
+        let ticks = self.ticks.get();
+        if ticks > 0 {
+            self.set_ticks(ticks - 1);
+        }
+        ticks
     }
 
     fn idle(&mut self) {
-        //let sched = unsafe {&mut (*self.sched.unwrap())};
-        //sched.process_idle(self.prio());
+        SCHEDULER.crit_sec(|sched|
+            sched.process_idle(self.prio())
+        );
     }
 
     fn stop(&mut self) {
-        //let sched = unsafe {&mut (*self.sched.unwrap())};
-        //sched.process_stop(self.prio());
+        SCHEDULER.crit_sec(|sched|
+            sched.process_stop(self.prio())
+        );
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
-        //let sched = unsafe {&mut (*self.sched.unwrap())};
-        //sched.process_sleep(self.prio(), ticks);
+        SCHEDULER.crit_sec(|sched|
+            sched.process_sleep(self.prio(), ticks)
+        );
     }
 }
