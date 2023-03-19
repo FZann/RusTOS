@@ -1,10 +1,11 @@
 use crate::kernel::processes::{Process, Task};
 use crate::kernel::{BitVec, SysCallType, Ticks};
-use crate::kernel::ShareLock;
+
+use crate::kernel::{Syncable, SyncShare};
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
-pub static SCHEDULER: ShareLock<Preemptive> = ShareLock::new(Preemptive::new());
+pub static SCHEDULER: SyncShare<Preemptive> = SyncShare::new(Preemptive::new());
 //pub static mut SCHEDULER: Preemptive = Preemptive::new();
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
 
@@ -33,7 +34,7 @@ pub trait Scheduler<'p> {
 pub struct Preemptive<'p> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    // Il fatto di usare Option<&dyn Process> implica una dimensione di due words dei campi running e next.
+    // Il fatto di usare &dyn Process implica una dimensione di due words dei campi running e next.
     // Questo si deve riflettere nell'assembly, usando i giusti offset.
     pub(crate) running: Option<&'p dyn Process>,
     pub(crate) next: Option<&'p dyn Process>,
@@ -44,7 +45,7 @@ pub struct Preemptive<'p> {
     sleeping: BitVec,
 }
 
-unsafe impl<'p> Sync for Preemptive<'p> {}
+impl<'p> Syncable for Preemptive<'p> {}
 
 impl<'p> Preemptive<'p> {
     pub const fn new() -> Self {

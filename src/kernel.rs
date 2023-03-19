@@ -13,7 +13,7 @@ pub use self::armv7em_arch::ExceptionFrame;
 use cortex_m::interrupt::disable as interrupt_disable;
 use cortex_m::interrupt::enable as interrupt_enable;
 
-use core::cell::RefCell;
+use core::cell::Cell;
 
 pub type Ticks = usize;
 
@@ -86,23 +86,32 @@ impl BitVec {
     }
 }
 
-
-pub struct ShareLock<T: Sized> {
-    obj: RefCell<T>,
+/// Astrazione per rendere Sync-safe le shared globals.
+/// In questo modo possiamo accedere a delle static, renderle mutabili
+/// e accedere ai metodi mutabili.
+/// E' Sync-safe siccome siamo su un sistema mono-core. Disabilitando gli
+/// interrupt rende impossibile la modifica concorrenziale dei dati.
+pub struct SyncShare<T> {
+    obj: Cell<T>,
 }
 
-unsafe impl<T: Sized> Sync for ShareLock<T> {}
+pub trait Syncable {}
+unsafe impl<T> Sync for SyncShare<T> {}
 
-impl<T: Sized> ShareLock<T> {
+impl<T: Syncable> SyncShare<T> {
     pub const fn new(obj: T) -> Self {
-        Self { obj: RefCell::new(obj) }
+        Self {
+            obj: Cell::new(obj)
+        }
     }
 
-    pub fn crit_sec<F: FnMut(&mut T)>(&self, mut f: F) {
-        if let Ok(obj) = &mut self.obj.try_borrow_mut() {
-            interrupt_disable();
-            f(obj);
-            unsafe { interrupt_enable(); }
-        }
+    /// Critical Section. ciò che viene eseguito all'interno della CS
+    /// non può essere interrotto da interrupt asincroni.
+    pub fn cs(&self, mut f: impl FnMut(&mut T))  {
+        interrupt_disable();
+        unsafe { 
+            f(&mut *self.obj.as_ptr());
+            interrupt_enable();
+        };
     }
 }

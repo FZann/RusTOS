@@ -129,7 +129,7 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    SCHEDULER.crit_sec(|sched| {
+    SCHEDULER.cs(|sched| {
         sched.inc_system_ticks();
         sched.schedule_next();
     });
@@ -247,6 +247,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
+		"cpsie	i",
         "bx     lr",
         options(noreturn)
     );
@@ -264,7 +265,7 @@ pub fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
-    SCHEDULER.crit_sec(|sched| {
+    SCHEDULER.cs(|sched| {
         sched.sys_call = sys_call;
     });
     unsafe {
@@ -298,7 +299,7 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    SCHEDULER.crit_sec(|sched| {
+    SCHEDULER.cs(|sched| {
         match sched.sys_call {
             SysCallType::Nop => (),
             SysCallType::StartScheduler => {

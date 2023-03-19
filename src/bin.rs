@@ -1,28 +1,28 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::processes::{Process, Task};
+use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
-use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
+use RusTOS::kernel::scheduler::{SCHEDULER, Scheduler};
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, InterruptLock};
+use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, SyncShare};
+use RusTOS::peripherals::{GPIOA, GPIO, GPIOB};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
-//static mut SEM: Semaphore = Semaphore::new();
-static mut SEM: Semaphore = Semaphore::new();
-static mut QUEUE: Queue<u8, 8> = Queue::allocate();
+static SEM: SyncShare<Semaphore> = Semaphore::new_syncable();
+//static QUEUE: SyncShare<Queue<u8, 8>> = Queue::new_syncable();
+
+static mut GPIOA: GPIOA = GPIOA::new();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
-    let mut lock = InterruptLock::new();
-    let sched = SCHEDULER.get_mut(&mut lock);
-    
+    SCHEDULER.cs(|sched|
     unsafe {
         sched.add_process(&mut CIAO);
         sched.add_process(&mut BELLO);
-    }
+    });
 
     SystemCall(SysCallType::StartScheduler);
     unreachable!();
@@ -32,13 +32,11 @@ fn ciao() -> ! {
     let mut c = 0u32;
     loop {
         c += 1;
-        unsafe {
-            QUEUE.push(1);
-            sleep(500);
-            QUEUE.push(0);
-            // SEM.release();
-            sleep(500);
-        }
+        //QUEUE.cs(|queue| queue.push(1));
+        sleep(500);
+        //QUEUE.cs(|queue| queue.push(0));
+        SEM.cs(|sem| sem.release());
+        sleep(500);
     }
 }
 
@@ -54,15 +52,17 @@ fn bello() -> ! {
         gpioa.write(gpioa.read() | 1 << 10);
         let gpioa_out = gpioa.add(6);
 
-        //let mut led_state = false;
+        let mut led_state = false;
         loop {
-            let led_state = QUEUE.pop() == 1;
-            //led_state = !led_state;
+            //QUEUE.cs(|queue| led_state = queue.pop() == 1);
+            led_state = !led_state;
             match led_state {
-                true => gpioa_out.write(0x20),
-                false => gpioa_out.write(0x20_0000),
+                true => GPIOA.set_high(),
+                false => GPIOA.set_low(),
+                //true => gpioa_out.write(0x20),
+                //false => gpioa_out.write(0x20_0000),
             }
-            //SEM.wait();
+            SEM.cs(|sem| sem.wait());
         }
     }
 }

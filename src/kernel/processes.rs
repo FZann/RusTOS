@@ -1,7 +1,7 @@
 use core::{cell::Cell, mem::transmute};
 use crate::kernel::Ticks;
 
-use super::scheduler::{SCHEDULER, Scheduler};
+use super::{scheduler::{SCHEDULER, Scheduler}, Syncable};
 
 pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
@@ -34,6 +34,8 @@ pub struct Task<'task, const WORDS: usize> {
     ticks: Cell<Ticks>,
     prio: u8,
 }
+
+impl<'task, const WORDS: usize> Syncable for Task<'task, WORDS> {}
 
 impl<'task, const WORDS: usize> Task<'task, WORDS> {
     pub const fn new(task: TaskHandle, prio: u8) -> Self {
@@ -102,20 +104,20 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn idle(&mut self) {
-        SCHEDULER.crit_sec(|sched|
+        SCHEDULER.cs(|sched|
             sched.process_idle(self.prio())
         );
     }
 
     fn stop(&mut self) {
-        SCHEDULER.crit_sec(|sched|
+        SCHEDULER.cs(|sched|
             sched.process_stop(self.prio())
         );
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
-        SCHEDULER.crit_sec(|sched|
+        SCHEDULER.cs(|sched|
             sched.process_sleep(self.prio(), ticks)
         );
     }
