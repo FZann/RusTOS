@@ -3,7 +3,7 @@ use core::{marker::PhantomData, mem::transmute};
 trait RegAddress {
     type Register;
     const ADDRESS: *mut Self::Register;
-    fn mut_ref() -> &'static mut Self::Register {
+    fn as_mut_ref() -> &'static mut Self::Register {
         unsafe{ transmute(Self::ADDRESS)}
     }
 }
@@ -78,12 +78,12 @@ where
     T::Register: GPIO,
     {
     fn set_high(&mut self) {
-        let gpio = Self::mut_ref();
+        let gpio = Self::as_mut_ref();
         gpio.set_high();
     }
 
     fn set_low(&mut self) {
-        let gpio = Self::mut_ref();
+        let gpio = Self::as_mut_ref();
         gpio.set_low();
     }
 }
