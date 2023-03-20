@@ -4,7 +4,6 @@ use crate::kernel::BitVec;
 
 use super::{SyncShare, Syncable};
 
-
 pub struct VecSemaphore {
     locked: BitVec,
 }

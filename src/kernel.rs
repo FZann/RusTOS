@@ -101,15 +101,15 @@ unsafe impl<T> Sync for SyncShare<T> {}
 impl<T: Syncable> SyncShare<T> {
     pub const fn new(obj: T) -> Self {
         Self {
-            obj: Cell::new(obj)
+            obj: Cell::new(obj),
         }
     }
 
     /// Critical Section. ciò che viene eseguito all'interno della CS
     /// non può essere interrotto da interrupt asincroni.
-    pub fn cs(&self, mut f: impl FnMut(&mut T))  {
+    pub fn cs(&self, mut f: impl FnMut(&mut T)) {
         interrupt_disable();
-        unsafe { 
+        unsafe {
             f(&mut *self.obj.as_ptr());
             interrupt_enable();
         };

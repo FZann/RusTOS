@@ -1,6 +1,6 @@
 use crate::kernel::semaphores::VecSemaphore;
 
-use super::{Syncable, SyncShare};
+use super::{SyncShare, Syncable};
 
 /// Coda. L'implementazione sul passaggio dei dati by-value (copia)
 /// e non by-ref (puntatore/riferimento).

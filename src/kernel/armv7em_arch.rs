@@ -139,6 +139,7 @@ pub extern "C" fn SysTick() {
 #[no_mangle]
 #[link_section = ".os_entry"]
 pub unsafe extern "C" fn __ENTRY() {
+
     asm!(
         /* Copy the data segment initializers from flash to SRAM */
         "ldr    r0, =ld_data_start",
@@ -247,7 +248,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
-		"cpsie	i",
+        "cpsie	i",
         "bx     lr",
         options(noreturn)
     );
@@ -299,33 +300,31 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    SCHEDULER.cs(|sched| {
-        match sched.sys_call {
-            SysCallType::Nop => (),
-            SysCallType::StartScheduler => {
-                let mut p = Peripherals::take().unwrap();
-    
-                let sys_tick = &mut p.SYST;
-                sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
-                let reload = peripheral::SYST::get_ticks_per_10ms();
-                sys_tick.set_reload(reload);
-                sys_tick.enable_interrupt();
-                sys_tick.enable_counter();
-    
-                let nvic = &mut p.NVIC;
-                unsafe {
-                    nvic.set_priority(Interrupts::SVCall, 0);
-                    nvic.set_priority(Interrupts::SysTick, 1);
-                    nvic.set_priority(Interrupts::PendSV, 255);
-                }
-    
-                sched.start();
+    SCHEDULER.cs(|sched| match sched.sys_call {
+        SysCallType::Nop => (),
+        SysCallType::StartScheduler => {
+            let mut p = Peripherals::take().unwrap();
+
+            let sys_tick = &mut p.SYST;
+            sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
+            let reload = peripheral::SYST::get_ticks_per_10ms();
+            sys_tick.set_reload(reload);
+            sys_tick.enable_interrupt();
+            sys_tick.enable_counter();
+
+            let nvic = &mut p.NVIC;
+            unsafe {
+                nvic.set_priority(Interrupts::SVCall, 0);
+                nvic.set_priority(Interrupts::SysTick, 1);
+                nvic.set_priority(Interrupts::PendSV, 255);
             }
-    
-            SysCallType::ProcessIdle => sched.running_idle(),
-            SysCallType::ProcessStop => sched.running_stop(),
-            SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
+
+            sched.start();
         }
+
+        SysCallType::ProcessIdle => sched.running_idle(),
+        SysCallType::ProcessStop => sched.running_stop(),
+        SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
     });
 }
 

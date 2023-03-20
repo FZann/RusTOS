@@ -1,7 +1,7 @@
 use crate::kernel::processes::{Process, Task};
 use crate::kernel::{BitVec, SysCallType, Ticks};
 
-use crate::kernel::{Syncable, SyncShare};
+use crate::kernel::{SyncShare, Syncable};
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());

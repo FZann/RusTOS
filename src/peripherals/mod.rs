@@ -1,12 +1,27 @@
 use core::{marker::PhantomData, mem::transmute};
 
-trait RegAddress {
+trait MemMappedRegister {
     type Register;
     const ADDRESS: *mut Self::Register;
     fn as_mut_ref() -> &'static mut Self::Register {
-        unsafe{ transmute(Self::ADDRESS)}
+        unsafe { transmute(Self::ADDRESS) }
     }
 }
+
+pub struct Input;
+pub struct Output<TYPE> { _type: PhantomData<TYPE>, }
+pub struct PushPull;
+pub struct OpenDrain;
+pub struct NoPull;
+pub struct PullDown;
+pub struct PullUp;
+
+pub trait GpioPort {
+    fn set_high(&mut self, n: usize);
+    fn set_low(&mut self, n: usize);
+    fn set_dir(&mut self, n: usize, dir: usize);
+}
+
 
 #[repr(C)]
 struct GpioReg {
@@ -23,67 +38,98 @@ struct GpioReg {
     br: usize,
 }
 
-impl GPIO for GpioReg {
-    fn set_high(&mut self) {
-        self.bsr = 0x20;
+impl GpioPort for GpioReg {
+    fn set_high(&mut self, n: usize) {
+        self.bsr = 1 << n;
     }
 
-    fn set_low(&mut self) {
-        self.bsr = 0x20_0000;
+    fn set_low(&mut self, n: usize) {
+        self.bsr = 1 << (n + 16);
     }
-}
 
-pub struct GPIOA {
-    _data: PhantomData<*const ()>
-}
-
-impl GPIOA {
-    pub const fn new() -> Self {
-        Self {
-            _data: PhantomData,
-        }
+    fn set_dir(&mut self, n: usize, dir: usize) {
+        self.mode = dir << (n + n);
     }
 }
 
-impl RegAddress for GPIOA {
-    type Register = GpioReg;
-    const ADDRESS: *mut Self::Register = 0x4800_0000 as *mut _;
-}
 
-pub struct GPIOB {
-    _data: PhantomData<*const ()>
-}
-
-impl GPIOB {
-    pub const fn new() -> Self {
-        Self {
-            _data: PhantomData,
-        }
-    }
-}
-
-impl RegAddress for GPIOB {
-    type Register = GpioReg;
-    const ADDRESS: *mut Self::Register = 0x4800_0000 as *mut _;
-}
-
-pub trait GPIO {
+pub trait GpioPin {
     fn set_high(&mut self);
     fn set_low(&mut self);
+    fn set_dir(&mut self, dir: usize);
 }
 
-impl<T> GPIO for T 
-where 
-    T: RegAddress + 'static,
-    T::Register: GPIO,
-    {
+pub trait GpioNum {
+    fn num(&self) -> usize;
+}
+
+impl<T> GpioPin for T
+where
+    T: GpioNum,
+    T: MemMappedRegister + 'static,
+    T::Register: GpioPort,
+{
     fn set_high(&mut self) {
-        let gpio = Self::as_mut_ref();
-        gpio.set_high();
+        Self::as_mut_ref().set_high(self.num());
     }
 
     fn set_low(&mut self) {
-        let gpio = Self::as_mut_ref();
-        gpio.set_low();
+        Self::as_mut_ref().set_low(self.num());
+    }
+
+    fn set_dir(&mut self, dir: usize) {
+        Self::as_mut_ref().set_dir(self.num(), 1);
     }
 }
+
+pub struct Pin<const N: usize, MODE, PULL> {
+    _mode: PhantomData<MODE>,
+    _pull: PhantomData<PULL>,
+}
+
+impl<const N: usize, MODE, PULL> Pin<N, MODE, PULL> {
+    pub(crate) const fn new() -> Pin<N, Input, PullUp> {
+        Pin::<N, Input, PullUp> {
+            _mode: PhantomData,
+            _pull: PhantomData,
+        }
+    }
+}
+
+impl<const N: usize, MODE, PULL> GpioNum for Pin<N, MODE, PULL> {
+    fn num(&self) -> usize {
+        N
+    }
+}
+
+macro_rules! make_gpio {
+    ($gpio: ident: $addr:expr, $([$pin: ident, $n: expr]),+) => {
+        
+        #[allow(non_snake_case)]
+        pub mod $gpio {
+            use super::{Pin, Input, PullUp};
+            use super::{MemMappedRegister, GpioReg};
+
+            $(pub static mut $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
+
+
+            impl<MODE, PULL> MemMappedRegister for Pin<$n, MODE, PULL> {
+                type Register = GpioReg;
+                const ADDRESS: *mut Self::Register = $addr as *mut _;
+            })+
+        }
+
+
+
+
+
+    };
+}
+
+
+make_gpio!(GPIOA: 0x4800_0000, [PA5, 5], [PA1, 1]);
+//make_gpio!(GPIOB: 0x4800_0400, [PB5, 5], [PB1, 1]);
+//make_gpio!(GPIOB: 0x4800_0400, [PB5, 5], [PB1, 1]);
+//make_gpio!(GPIOC: 0x4800_0800, [PB5, 5], [PB1, 1]);
+//make_gpio!(GPIOD: 0x4800_0C00, [PB5, 5], [PB1, 1]);
+

@@ -3,23 +3,21 @@
 
 use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
-use RusTOS::kernel::scheduler::{SCHEDULER, Scheduler};
+use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, SyncShare};
-use RusTOS::peripherals::{GPIOA, GPIO, GPIOB};
+use RusTOS::kernel::{sleep, ExceptionFrame, SyncShare, SysCallType, SystemCall};
+use RusTOS::peripherals::{GPIOA, GpioPin};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
 static SEM: SyncShare<Semaphore> = Semaphore::new_syncable();
 //static QUEUE: SyncShare<Queue<u8, 8>> = Queue::new_syncable();
 
-static mut GPIOA: GPIOA = GPIOA::new();
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
-    SCHEDULER.cs(|sched|
-    unsafe {
+    SCHEDULER.cs(|sched| unsafe {
         sched.add_process(&mut CIAO);
         sched.add_process(&mut BELLO);
     });
@@ -33,7 +31,7 @@ fn ciao() -> ! {
     loop {
         c += 1;
         //QUEUE.cs(|queue| queue.push(1));
-        sleep(500);
+        //sleep(500);
         //QUEUE.cs(|queue| queue.push(0));
         SEM.cs(|sem| sem.release());
         sleep(500);
@@ -50,15 +48,16 @@ fn bello() -> ! {
         let gpioa: *mut usize = 0x4800_0000 as *mut usize;
 
         gpioa.write(gpioa.read() | 1 << 10);
-        let gpioa_out = gpioa.add(6);
-
+        
         let mut led_state = false;
         loop {
+                        
+            /* Quinto pin per il led (PIN 5) */
             //QUEUE.cs(|queue| led_state = queue.pop() == 1);
             led_state = !led_state;
             match led_state {
-                true => GPIOA.set_high(),
-                false => GPIOA.set_low(),
+                true => GPIOA::PA5.set_high(),
+                false => GPIOA::PA5.set_low(),
                 //true => gpioa_out.write(0x20),
                 //false => gpioa_out.write(0x20_0000),
             }
