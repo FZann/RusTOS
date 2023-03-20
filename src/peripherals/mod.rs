@@ -78,7 +78,7 @@ where
     }
 
     fn set_dir(&mut self, dir: usize) {
-        Self::as_mut_ref().set_dir(self.num(), 1);
+        Self::as_mut_ref().set_dir(self.num(), dir);
     }
 }
 

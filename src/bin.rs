@@ -45,9 +45,7 @@ fn bello() -> ! {
         let rccval = rcc.read();
         rcc.write(rccval | 1 << 17);
 
-        let gpioa: *mut usize = 0x4800_0000 as *mut usize;
-
-        gpioa.write(gpioa.read() | 1 << 10);
+        GPIOA::PA5.set_dir(1);
         
         let mut led_state = false;
         loop {
