@@ -1,12 +1,9 @@
-use core::{marker::PhantomData, mem::transmute};
+use core::marker::PhantomData;
 
-trait MemMappedRegister {
-    type Register;
-    const ADDRESS: *mut Self::Register;
-    fn as_mut_ref() -> &'static mut Self::Register {
-        unsafe { transmute(Self::ADDRESS) }
-    }
-}
+use crate::kernel::Syncable;
+
+use super::MemMappedRegister;
+
 
 pub struct Input;
 pub struct Output<TYPE> { _type: PhantomData<TYPE>, }
@@ -24,7 +21,7 @@ pub trait GpioPort {
 
 
 #[repr(C)]
-struct GpioReg {
+pub(crate) struct GpioReg {
     mode: usize,
     otype: usize,
     ospeed: usize,
@@ -87,6 +84,9 @@ pub struct Pin<const N: usize, MODE, PULL> {
     _pull: PhantomData<PULL>,
 }
 
+unsafe impl<const N: usize, MODE, PULL> Sync for Pin<N, MODE, PULL> {}
+impl<const N: usize, MODE, PULL> Syncable for Pin<N, MODE, PULL> {}
+
 impl<const N: usize, MODE, PULL> Pin<N, MODE, PULL> {
     pub(crate) const fn new() -> Pin<N, Input, PullUp> {
         Pin::<N, Input, PullUp> {
@@ -110,19 +110,14 @@ macro_rules! make_gpio {
             use super::{Pin, Input, PullUp};
             use super::{MemMappedRegister, GpioReg};
 
-            $(pub static mut $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
+            $(pub static $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
 
-
+            
             impl<MODE, PULL> MemMappedRegister for Pin<$n, MODE, PULL> {
                 type Register = GpioReg;
                 const ADDRESS: *mut Self::Register = $addr as *mut _;
             })+
         }
-
-
-
-
-
     };
 }
 

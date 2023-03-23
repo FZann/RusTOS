@@ -38,6 +38,7 @@ pub struct Task<'task, const WORDS: usize> {
     prio: u8,
 }
 
+unsafe impl<'task, const WORDS: usize> Sync for Task<'task, WORDS> {}
 impl<'task, const WORDS: usize> Syncable for Task<'task, WORDS> {}
 
 impl<'task, const WORDS: usize> Task<'task, WORDS> {

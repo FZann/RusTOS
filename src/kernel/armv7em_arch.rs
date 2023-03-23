@@ -1,7 +1,7 @@
 use core::arch::asm;
 
+use crate::kernel::{Syncable, SysCallType};
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use crate::kernel::SysCallType;
 
 use cortex_m::interrupt::*;
 use cortex_m::peripheral::{self, Peripherals};

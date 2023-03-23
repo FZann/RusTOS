@@ -1,6 +1,6 @@
 use crate::kernel::semaphores::VecSemaphore;
 
-use super::{SyncShare, Syncable};
+use super::Syncable;
 
 /// Coda. L'implementazione sul passaggio dei dati by-value (copia)
 /// e non by-ref (puntatore/riferimento).
@@ -11,6 +11,7 @@ pub struct Queue<T, const SIZE: usize> {
     tail: usize,
 }
 
+unsafe impl<T, const SIZE: usize> Sync for Queue<T, SIZE> {}
 impl<T, const SIZE: usize> Syncable for Queue<T, SIZE> 
 where 
     T: Sized + Copy {}
@@ -27,10 +28,6 @@ where
             head: 0,
             tail: 0,
         }
-    }
-
-    pub const fn new_syncable() -> SyncShare<Self> {
-        SyncShare::new(Self::allocate())
     }
 
     pub fn push(&mut self, object: T) {

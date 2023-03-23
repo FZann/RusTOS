@@ -1,11 +1,11 @@
 use crate::kernel::processes::{Process, Task};
 use crate::kernel::{BitVec, SysCallType, Ticks};
 
-use crate::kernel::{SyncShare, Syncable};
+use crate::kernel::Syncable;
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
-pub static SCHEDULER: SyncShare<Preemptive> = SyncShare::new(Preemptive::new());
+pub static SCHEDULER: Preemptive = Preemptive::new();
 //pub static mut SCHEDULER: Preemptive = Preemptive::new();
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
 
@@ -45,6 +45,7 @@ pub struct Preemptive<'p> {
     sleeping: BitVec,
 }
 
+unsafe impl<'p> Sync for Preemptive<'p> {}
 impl<'p> Syncable for Preemptive<'p> {}
 
 impl<'p> Preemptive<'p> {

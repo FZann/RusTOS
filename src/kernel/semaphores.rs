@@ -1,8 +1,7 @@
 use crate::kernel::processes::Process;
-use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-use crate::kernel::BitVec;
+use crate::kernel::scheduler::{SCHEDULER, Scheduler};
+use crate::kernel::{BitVec, Syncable};
 
-use super::{SyncShare, Syncable};
 
 pub struct VecSemaphore {
     locked: BitVec,
@@ -15,10 +14,6 @@ impl VecSemaphore {
         Self {
             locked: BitVec::new(),
         }
-    }
-
-    pub const fn new_syncable() -> SyncShare<Self> {
-        SyncShare::new(Self::new())
     }
 
     pub fn wait(&mut self) {
@@ -42,15 +37,12 @@ pub struct Semaphore<'p> {
     locked: Option<&'p dyn Process>,
 }
 
+unsafe impl<'p> Sync for Semaphore<'p> {}
 impl<'p> Syncable for Semaphore<'p> {}
 
 impl<'p> Semaphore<'p> {
     pub const fn new() -> Self {
         Self { locked: None }
-    }
-
-    pub const fn new_syncable() -> SyncShare<Self> {
-        SyncShare::new(Self::new())
     }
 
     pub fn wait(&mut self) {

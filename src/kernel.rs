@@ -13,8 +13,6 @@ pub use self::armv7em_arch::ExceptionFrame;
 use cortex_m::interrupt::disable as interrupt_disable;
 use cortex_m::interrupt::enable as interrupt_enable;
 
-use core::cell::Cell;
-
 pub type Ticks = usize;
 
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
@@ -91,26 +89,11 @@ impl BitVec {
 /// e accedere ai metodi mutabili.
 /// E' Sync-safe siccome siamo su un sistema mono-core. Disabilitando gli
 /// interrupt rende impossibile la modifica concorrenziale dei dati.
-pub struct SyncShare<T> {
-    obj: Cell<T>,
-}
-
-pub trait Syncable {}
-unsafe impl<T> Sync for SyncShare<T> {}
-
-impl<T: Syncable> SyncShare<T> {
-    pub const fn new(obj: T) -> Self {
-        Self {
-            obj: Cell::new(obj),
-        }
-    }
-
-    /// Critical Section. ciò che viene eseguito all'interno della CS
-    /// non può essere interrotto da interrupt asincroni.
-    pub fn cs(&self, mut f: impl FnMut(&mut T)) {
+pub trait Syncable: Sync {
+    fn cs(&self, f: impl FnOnce(&mut Self)) {
         interrupt_disable();
-        unsafe {
-            f(&mut *self.obj.as_ptr());
+        unsafe { 
+            f(&mut *(self as *const Self as *mut Self));
             interrupt_enable();
         };
     }
