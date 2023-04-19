@@ -110,7 +110,7 @@ macro_rules! make_gpio {
             use super::{Pin, Input, PullUp};
             use super::{MemMappedRegister, GpioReg};
 
-            $(pub static $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
+            $(pub static mut $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
 
             
             impl<MODE, PULL> MemMappedRegister for Pin<$n, MODE, PULL> {

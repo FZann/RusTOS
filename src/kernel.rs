@@ -6,7 +6,7 @@ pub mod semaphores;
 mod armv7em_arch;
 
 // Aliasing per poter usare la compilazione condizionale
-pub use self::armv7em_arch::idle_task;
+pub(crate) use self::armv7em_arch::idle_task;
 pub use self::armv7em_arch::load_first_process;
 pub use self::armv7em_arch::svc as SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
@@ -22,6 +22,12 @@ pub enum SysCallType {
     ProcessSleep(Ticks),
     ProcessStop,
     StartScheduler,
+}
+
+#[repr(C)]
+pub enum HardFaultError {
+    FromProcess = 1,
+    FromPrivileged = 2,
 }
 
 #[inline(always)]
@@ -89,6 +95,8 @@ impl BitVec {
 /// e accedere ai metodi mutabili.
 /// E' Sync-safe siccome siamo su un sistema mono-core. Disabilitando gli
 /// interrupt rende impossibile la modifica concorrenziale dei dati.
+
+/// Le closures non si possono usare!!!!!
 pub trait Syncable: Sync {
     fn cs(&self, f: impl FnOnce(&mut Self)) {
         interrupt_disable();

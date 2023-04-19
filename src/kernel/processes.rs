@@ -108,15 +108,21 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn idle(&mut self) {
-        SCHEDULER.cs(|sched| sched.process_idle(self.prio()));
+        unsafe {
+            SCHEDULER.cs(|sched| sched.process_idle(self.prio()));
+        }
     }
 
     fn stop(&mut self) {
-        SCHEDULER.cs(|sched| sched.process_stop(self.prio()));
+        unsafe {
+            SCHEDULER.cs(|sched| sched.process_stop(self.prio()));
+        }
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
-        SCHEDULER.cs(|sched| sched.process_sleep(self.prio(), ticks));
+        unsafe {
+            SCHEDULER.cs(|sched| sched.process_sleep(self.prio(), ticks));
+        }
     }
 }

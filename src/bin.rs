@@ -5,36 +5,44 @@ use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::{sleep, ExceptionFrame, Syncable, SysCallType, SystemCall};
+use RusTOS::kernel::{sleep, ExceptionFrame, Syncable, SysCallType, SystemCall, HardFaultError};
 use RusTOS::peripherals::gpio::{GPIOA::*, GpioPin};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
-static SEM: Semaphore = Semaphore::new();
+static mut SEM: Semaphore = Semaphore::new();
 //static QUEUE: SyncShare<Queue<u8, 8>> = Queue::new_syncable();
 
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
-    SCHEDULER.cs(|sched| unsafe {
-        sched.add_process(&mut CIAO);
-        sched.add_process(&mut BELLO);
-    });
+    unsafe {
+        SCHEDULER.add_process(&mut CIAO);
+        SCHEDULER.add_process(&mut BELLO);
+    };
 
     SystemCall(SysCallType::StartScheduler);
     unreachable!();
 }
 
+#[no_mangle]
+#[allow(non_snake_case)]
+extern "C" fn OSFault(_error: HardFaultError ,_frame: &ExceptionFrame) -> ! {
+    loop {}
+}
+
 fn ciao() -> ! {
     let mut c = 0u32;
     loop {
-        c += 1;
-        //QUEUE.cs(|queue| queue.push(1));
-        //sleep(500);
-        //QUEUE.cs(|queue| queue.push(0));
-        SEM.cs(|sem| sem.release());
-        sleep(500);
+        unsafe {
+            c += 1;
+            //QUEUE.cs(|queue| queue.push(1));
+            //sleep(500);
+            //QUEUE.cs(|queue| queue.push(0));
+            SEM.release();
+            sleep(500);
+        }
     }
 }
 
@@ -44,28 +52,22 @@ fn bello() -> ! {
         rcc = rcc.add(5);
         let rccval = rcc.read();
         rcc.write(rccval | 1 << 17);
-    }
-
-        PA5.cs(|pa5| pa5.set_dir(1));
+        
+        PA5.set_dir(1);
         
         let mut led_state = false;
         loop {
-                        
+            
             /* Quinto pin per il led (PIN 5) */
             //QUEUE.cs(|queue| led_state = queue.pop() == 1);
             led_state = !led_state;
             match led_state {
-                true => PA5.cs(|pa5| pa5.set_high()),
-                false => PA5.cs(|pa5| pa5.set_low()),
-                //true => gpioa_out.write(0x20),
-                //false => gpioa_out.write(0x20_0000),
+                true => PA5.set_high(),
+                false => PA5.set_low(),
             }
-            SEM.cs(|sem| sem.wait());
+            SEM.wait();
         }
+    }
 }
 
-#[no_mangle]
-#[allow(non_snake_case)]
-extern "C" fn OSFault(_frame: &ExceptionFrame) -> ! {
-    loop {}
-}
+

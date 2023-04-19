@@ -5,7 +5,7 @@ use crate::kernel::Syncable;
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
-pub static SCHEDULER: Preemptive = Preemptive::new();
+pub static mut SCHEDULER: Preemptive = Preemptive::new();
 //pub static mut SCHEDULER: Preemptive = Preemptive::new();
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
 

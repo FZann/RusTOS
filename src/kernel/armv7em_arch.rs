@@ -129,10 +129,10 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    SCHEDULER.cs(|sched| {
-        sched.inc_system_ticks();
-        sched.schedule_next();
-    });
+    unsafe {
+        SCHEDULER.inc_system_ticks();
+        SCHEDULER.schedule_next();
+    }
 }
 
 #[naked]
@@ -254,9 +254,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
     );
 }
 
-#[no_mangle]
-#[inline(always)]
-pub fn idle_task() -> ! {
+pub(crate) fn idle_task() -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -266,9 +264,9 @@ pub fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
-    SCHEDULER.cs(|sched| {
-        sched.sys_call = sys_call;
-    });
+    unsafe {
+        SCHEDULER.sys_call = sys_call;
+    }
     unsafe {
         match sys_call {
             SysCallType::Nop => (),
@@ -289,10 +287,12 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
         "mov    r1, #4",
         "tst    r0, r1",
         "bne    0f",
-        "mrs    r0, MSP",
+        "mov    r0, #2",
+        "mrs    r1, MSP",
         "b      OSFault",
         "0:",
-        "mrs    r0, PSP",
+        "mov    r0, #1",
+        "mrs    r1, PSP",
         "b      OSFault",
         options(noreturn)
     );
@@ -300,32 +300,33 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    SCHEDULER.cs(|sched| match sched.sys_call {
-        SysCallType::Nop => (),
-        SysCallType::StartScheduler => {
-            let mut p = Peripherals::take().unwrap();
+    unsafe {
 
-            let sys_tick = &mut p.SYST;
-            sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
-            let reload = peripheral::SYST::get_ticks_per_10ms();
-            sys_tick.set_reload(reload);
-            sys_tick.enable_interrupt();
-            sys_tick.enable_counter();
+        match SCHEDULER.sys_call {
+            SysCallType::Nop => (),
+            SysCallType::StartScheduler => {
+                let mut p = Peripherals::take().unwrap();
 
-            let nvic = &mut p.NVIC;
-            unsafe {
+                let sys_tick = &mut p.SYST;
+                sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
+                let reload = peripheral::SYST::get_ticks_per_10ms();
+                sys_tick.set_reload(reload);
+                sys_tick.enable_interrupt();
+                sys_tick.enable_counter();
+
+                let nvic = &mut p.NVIC;
                 nvic.set_priority(Interrupts::SVCall, 0);
                 nvic.set_priority(Interrupts::SysTick, 1);
                 nvic.set_priority(Interrupts::PendSV, 255);
+
+                SCHEDULER.start();
             }
 
-            sched.start();
-        }
-
-        SysCallType::ProcessIdle => sched.running_idle(),
-        SysCallType::ProcessStop => sched.running_stop(),
-        SysCallType::ProcessSleep(ticks) => sched.running_sleep(ticks),
-    });
+            SysCallType::ProcessIdle => SCHEDULER.running_idle(),
+            SysCallType::ProcessStop => SCHEDULER.running_stop(),
+            SysCallType::ProcessSleep(ticks) => SCHEDULER.running_sleep(ticks),
+        };
+    }
 }
 
 #[derive(Clone, Copy)]

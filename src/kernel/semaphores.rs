@@ -17,18 +17,18 @@ impl VecSemaphore {
     }
 
     pub fn wait(&mut self) {
-        SCHEDULER.cs(|sched| {
-            self.locked.set(sched.running_id());
-            sched.running_stop();
-        });
+        unsafe {
+            self.locked.set(SCHEDULER.running_id());
+            SCHEDULER.running_stop();
+        }
     }
 
     pub fn release(&mut self) {
         if let Ok(id) = self.locked.first_set() {
-            SCHEDULER.cs(|sched| {
+            unsafe {
                 self.locked.clear(id);
-                sched.process_idle(id);
-            });
+                SCHEDULER.process_idle(id);
+            }
         }
     }
 }
@@ -50,19 +50,19 @@ impl<'p> Semaphore<'p> {
             return;
         }
 
-        SCHEDULER.cs(|sched| {
-            self.locked = sched.running;
-            sched.running_stop();
-        });
+    unsafe {
+        self.locked = SCHEDULER.running;
+        SCHEDULER.running_stop();
+    }
     }
 
     pub fn release(&mut self) {
         if let Some(locked) = self.locked {
-            SCHEDULER.cs(|sched| {
+            unsafe {
                 let prio = locked.prio();
                 self.locked = None;
-                sched.process_idle(prio);
-            });
+                SCHEDULER.process_idle(prio);
+            }
         }
     }
 }
