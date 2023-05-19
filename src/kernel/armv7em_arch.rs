@@ -1,10 +1,9 @@
 use core::arch::asm;
 
-use crate::kernel::{Syncable, SysCallType};
+use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 
-use cortex_m::interrupt::*;
-use cortex_m::peripheral::{self, Peripherals};
+//use cortex_m::Peripherals;
 
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
@@ -19,6 +18,21 @@ pub struct ExceptionFrame {
     pc: u32,
     xpsr: u32,
 }
+
+
+#[derive(Clone, Copy)]
+enum Interrupts {
+    SVCall = 11,
+    PendSV = 14,
+    SysTick = 15,
+}
+
+impl Interrupts {
+    fn number(self) -> u16 {
+        self as u16
+    }
+}
+
 
 /*
 #[allow(dead_code)]
@@ -134,6 +148,16 @@ pub extern "C" fn SysTick() {
         SCHEDULER.schedule_next();
     }
 }
+
+
+const SCB_ICSR_PENDSVSET: usize = 1 << 28;
+
+pub unsafe fn request_context_switch() {
+    let scb: *mut usize = 0xE000_ED04 as *mut usize;
+
+    (*scb) |= SCB_ICSR_PENDSVSET;
+}
+
 
 #[naked]
 #[no_mangle]
@@ -298,6 +322,10 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
     );
 }
 
+const SYST_CSR_ENABLE: usize = 1 << 0;
+const SYST_CSR_TICKINT: usize = 1 << 1;
+const SYST_CSR_CLKSOURCE: usize = 1 << 2;
+
 #[no_mangle]
 pub extern "C" fn SVCall() {
     unsafe {
@@ -305,19 +333,27 @@ pub extern "C" fn SVCall() {
         match SCHEDULER.sys_call {
             SysCallType::Nop => (),
             SysCallType::StartScheduler => {
-                let mut p = Peripherals::take().unwrap();
+                //let mut p = cortex_m::Peripherals::take().unwrap();
 
+                let syst: *mut usize = 0xE000_E010 as *mut usize;
+                (*syst) |= SYST_CSR_CLKSOURCE;
+                (*syst.offset(1)) = *syst.offset(3);
+                (*syst) |= SYST_CSR_TICKINT | SYST_CSR_ENABLE;
+               
+                /*
                 let sys_tick = &mut p.SYST;
-                sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
-                let reload = peripheral::SYST::get_ticks_per_10ms();
+                let reload = cortex_m::peripheral::SYST::get_ticks_per_10ms();
                 sys_tick.set_reload(reload);
                 sys_tick.enable_interrupt();
                 sys_tick.enable_counter();
+                */
 
-                let nvic = &mut p.NVIC;
-                nvic.set_priority(Interrupts::SVCall, 0);
-                nvic.set_priority(Interrupts::SysTick, 1);
-                nvic.set_priority(Interrupts::PendSV, 255);
+                //let nv: *mut usize = 0xE000_E100 as *mut usize;
+
+                //let nvic = &mut p.NVIC;
+                //nvic.set_priority(Interrupts::SVCall, 0);
+                //nvic.set_priority(Interrupts::SysTick, 1);
+                //nvic.set_priority(Interrupts::PendSV, 255);
 
                 SCHEDULER.start();
             }
@@ -329,15 +365,3 @@ pub extern "C" fn SVCall() {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Interrupts {
-    SVCall = 11,
-    PendSV = 14,
-    SysTick = 15,
-}
-
-unsafe impl InterruptNumber for Interrupts {
-    fn number(self) -> u16 {
-        self as u16
-    }
-}

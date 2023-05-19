@@ -1,7 +1,6 @@
 use crate::kernel::processes::{Process, Task};
 use crate::kernel::{BitVec, SysCallType, Ticks};
-
-use crate::kernel::Syncable;
+use crate::kernel::request_context_switch;
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
@@ -44,9 +43,6 @@ pub struct Preemptive<'p> {
     schedulable: BitVec,
     sleeping: BitVec,
 }
-
-unsafe impl<'p> Sync for Preemptive<'p> {}
-impl<'p> Syncable for Preemptive<'p> {}
 
 impl<'p> Preemptive<'p> {
     pub const fn new() -> Self {
@@ -140,13 +136,13 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         match (self.running_id(), self.schedulable.first_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                cortex_m::peripheral::SCB::set_pendsv();
+                unsafe { request_context_switch(); }
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
                 self.next = unsafe { Some(&IDLE_TASK) };
-                cortex_m::peripheral::SCB::set_pendsv();
+                unsafe { request_context_switch(); }
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla

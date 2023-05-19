@@ -3,7 +3,6 @@ use core::{cell::Cell, mem::transmute};
 
 use super::{
     scheduler::{Scheduler, SCHEDULER},
-    Syncable,
 };
 
 pub type TaskHandle = fn() -> !;
@@ -37,9 +36,6 @@ pub struct Task<'task, const WORDS: usize> {
     ticks: Cell<Ticks>,
     prio: u8,
 }
-
-unsafe impl<'task, const WORDS: usize> Sync for Task<'task, WORDS> {}
-impl<'task, const WORDS: usize> Syncable for Task<'task, WORDS> {}
 
 impl<'task, const WORDS: usize> Task<'task, WORDS> {
     pub const fn new(task: TaskHandle, prio: u8) -> Self {
@@ -109,20 +105,20 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
 
     fn idle(&mut self) {
         unsafe {
-            SCHEDULER.cs(|sched| sched.process_idle(self.prio()));
+            SCHEDULER.process_idle(self.prio());
         }
     }
 
     fn stop(&mut self) {
         unsafe {
-            SCHEDULER.cs(|sched| sched.process_stop(self.prio()));
+            SCHEDULER.process_stop(self.prio());
         }
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
         unsafe {
-            SCHEDULER.cs(|sched| sched.process_sleep(self.prio(), ticks));
+            SCHEDULER.process_sleep(self.prio(), ticks);
         }
     }
 }

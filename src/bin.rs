@@ -5,8 +5,7 @@ use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::{sleep, ExceptionFrame, Syncable, SysCallType, SystemCall, HardFaultError};
-use RusTOS::peripherals::gpio::{GPIOA::*, GpioPin};
+use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, HardFaultError};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
@@ -53,7 +52,6 @@ fn bello() -> ! {
         let rccval = rcc.read();
         rcc.write(rccval | 1 << 17);
         
-        PA5.set_dir(1);
         
         let mut led_state = false;
         loop {
@@ -62,8 +60,7 @@ fn bello() -> ! {
             //QUEUE.cs(|queue| led_state = queue.pop() == 1);
             led_state = !led_state;
             match led_state {
-                true => PA5.set_high(),
-                false => PA5.set_low(),
+                _ => (),
             }
             SEM.wait();
         }
