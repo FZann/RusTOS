@@ -2,6 +2,8 @@ use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{SCHEDULER, Scheduler};
 use crate::kernel::BitVec;
 
+use super::Syncable;
+
 
 pub struct VecSemaphore {
     locked: BitVec,
@@ -15,18 +17,14 @@ impl VecSemaphore {
     }
 
     pub fn wait(&mut self) {
-        unsafe {
-            self.locked.set(SCHEDULER.running_id());
-            SCHEDULER.running_stop();
-        }
+        self.locked.set(SCHEDULER.running_id());
+        SCHEDULER.cs(|s| s.running_stop());
     }
 
     pub fn release(&mut self) {
         if let Ok(id) = self.locked.first_set() {
-            unsafe {
-                self.locked.clear(id);
-                SCHEDULER.process_idle(id);
-            }
+            self.locked.clear(id);
+            SCHEDULER.cs(|s| s.process_idle(id));
         }
     }
 }
@@ -45,19 +43,15 @@ impl<'p> Semaphore<'p> {
             return;
         }
 
-    unsafe {
-        self.locked = SCHEDULER.running;
-        SCHEDULER.running_stop();
-    }
+    self.locked = SCHEDULER.running;
+    SCHEDULER.cs(|s| s.running_stop());
     }
 
     pub fn release(&mut self) {
         if let Some(locked) = self.locked {
-            unsafe {
-                let prio = locked.prio();
-                self.locked = None;
-                SCHEDULER.process_idle(prio);
-            }
+            let prio = locked.prio();
+            self.locked = None;
+            SCHEDULER.cs(|s| s.process_idle(prio));
         }
     }
 }

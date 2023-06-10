@@ -5,7 +5,7 @@ use RusTOS::kernel::processes::Task;
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::scheduler::{Scheduler, SCHEDULER};
 use RusTOS::kernel::semaphores::Semaphore;
-use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, HardFaultError};
+use RusTOS::kernel::{sleep, ExceptionFrame, SysCallType, SystemCall, HardFaultError, Syncable};
 
 static mut CIAO: Task<256> = Task::new(ciao, 0);
 static mut BELLO: Task<256> = Task::new(bello, 1);
@@ -17,9 +17,11 @@ static mut SEM: Semaphore = Semaphore::new();
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     unsafe {
-        SCHEDULER.add_process(&mut CIAO);
-        SCHEDULER.add_process(&mut BELLO);
-    };
+        SCHEDULER.cs(|s| {
+            let _ = s.add_process(&mut CIAO);
+            let _ = s.add_process(&mut BELLO);
+        });
+    }
 
     SystemCall(SysCallType::StartScheduler);
     unreachable!();

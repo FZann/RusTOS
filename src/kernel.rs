@@ -11,8 +11,8 @@ pub use self::armv7em_arch::load_first_process;
 pub use self::armv7em_arch::svc as SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
 pub use self::armv7em_arch::request_context_switch;
-//use cortex_m::interrupt::disable as interrupt_disable;
-//use cortex_m::interrupt::enable as interrupt_enable;
+use self::armv7em_arch::interrupt_disable;
+use self::armv7em_arch::interrupt_enable;
 
 pub type Ticks = usize;
 
@@ -92,6 +92,8 @@ impl BitVec {
     }
 }
 
+
+
 // Astrazione per rendere Sync-safe le shared globals.
 // In questo modo possiamo accedere a delle static, renderle mutabili
 // e accedere ai metodi mutabili.
@@ -99,12 +101,13 @@ impl BitVec {
 // interrupt rende impossibile la modifica concorrenziale dei dati.
 
 // Le closures non si possono usare!!!!!
-//pub trait Syncable: Sync {
-//   fn cs(&self, f: impl FnOnce(&mut Self)) {
-//      interrupt_disable();
-//        unsafe { 
-//            f(&mut *(self as *const Self as *mut Self));
-//            interrupt_enable();
-//       };
-//    }
-//}
+pub trait Syncable: Sync {
+   fn cs(&self, f: impl Fn(&mut Self)) {
+      interrupt_disable();
+        unsafe { 
+            f(&mut *(self as *const Self as *mut Self));
+            interrupt_enable();
+       };
+    }
+}
+

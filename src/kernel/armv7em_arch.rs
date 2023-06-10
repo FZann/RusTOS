@@ -3,7 +3,15 @@ use core::arch::asm;
 use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 
+use super::Syncable;
+
 //use cortex_m::Peripherals;
+
+const SCB_ICSR_PENDSVSET: usize = 1 << 28;
+const SYST_CSR_ENABLE: usize = 1 << 0;
+const SYST_CSR_TICKINT: usize = 1 << 1;
+const SYST_CSR_CLKSOURCE: usize = 1 << 2;
+
 
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
@@ -143,19 +151,29 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    unsafe {
-        SCHEDULER.inc_system_ticks();
-        SCHEDULER.schedule_next();
-    }
+    SCHEDULER.cs(|s|  {
+            s.inc_system_ticks();
+            s.schedule_next();
+        }
+    );
 }
-
-
-const SCB_ICSR_PENDSVSET: usize = 1 << 28;
 
 pub unsafe fn request_context_switch() {
     let scb: *mut usize = 0xE000_ED04 as *mut usize;
 
     (*scb) |= SCB_ICSR_PENDSVSET;
+}
+
+pub fn interrupt_disable() {
+    unsafe {
+        asm!("cpsid i");
+    }
+}
+
+pub fn interrupt_enable() {
+    unsafe {
+        asm!("cpsie i");
+    }
 }
 
 
@@ -288,9 +306,8 @@ pub(crate) fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
-    unsafe {
-        SCHEDULER.sys_call = sys_call;
-    }
+    SCHEDULER.cs(|s| s.sys_call = sys_call);
+
     unsafe {
         match sys_call {
             SysCallType::Nop => (),
@@ -322,9 +339,7 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
     );
 }
 
-const SYST_CSR_ENABLE: usize = 1 << 0;
-const SYST_CSR_TICKINT: usize = 1 << 1;
-const SYST_CSR_CLKSOURCE: usize = 1 << 2;
+
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
@@ -355,12 +370,12 @@ pub extern "C" fn SVCall() {
                 //nvic.set_priority(Interrupts::SysTick, 1);
                 //nvic.set_priority(Interrupts::PendSV, 255);
 
-                SCHEDULER.start();
+                SCHEDULER.cs(|s| s.start());
             }
 
-            SysCallType::ProcessIdle => SCHEDULER.running_idle(),
-            SysCallType::ProcessStop => SCHEDULER.running_stop(),
-            SysCallType::ProcessSleep(ticks) => SCHEDULER.running_sleep(ticks),
+            SysCallType::ProcessIdle => SCHEDULER.cs(|s| s.running_idle()),
+            SysCallType::ProcessStop => SCHEDULER.cs(|s| s.running_stop()),
+            SysCallType::ProcessSleep(ticks) => SCHEDULER.cs(|s| s.running_sleep(ticks)),
         };
     }
 }

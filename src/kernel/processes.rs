@@ -2,7 +2,7 @@ use crate::kernel::Ticks;
 use core::{cell::Cell, mem::transmute};
 
 use super::{
-    scheduler::{Scheduler, SCHEDULER},
+    scheduler::{Scheduler, SCHEDULER}, Syncable,
 };
 
 pub type TaskHandle = fn() -> !;
@@ -104,21 +104,15 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn idle(&mut self) {
-        unsafe {
-            SCHEDULER.process_idle(self.prio());
-        }
+        SCHEDULER.cs(|s| s.process_idle(self.prio()));
     }
 
     fn stop(&mut self) {
-        unsafe {
-            SCHEDULER.process_stop(self.prio());
-        }
+        SCHEDULER.cs(|s| s.process_stop(self.prio()));
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
-        unsafe {
-            SCHEDULER.process_sleep(self.prio(), ticks);
-        }
+        SCHEDULER.cs(|s| s.process_sleep(self.prio(), ticks));
     }
 }
