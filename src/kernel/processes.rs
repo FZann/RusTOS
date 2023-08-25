@@ -1,9 +1,7 @@
 use crate::kernel::Ticks;
 use core::{cell::Cell, mem::transmute};
 
-use super::{
-    scheduler::{Scheduler, SCHEDULER}, Syncable,
-};
+use super::{scheduler::{Scheduler, SCHEDULER}, CriticalSection};
 
 pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
@@ -104,15 +102,18 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn idle(&mut self) {
-        SCHEDULER.cs(|s| s.process_idle(self.prio()));
+        let s = SCHEDULER.get_access(&CriticalSection::activate());
+        s.process_idle(self.prio());
     }
 
     fn stop(&mut self) {
-        SCHEDULER.cs(|s| s.process_stop(self.prio()));
+        let s = SCHEDULER.get_access(&CriticalSection::activate());
+        s.process_stop(self.prio());
     }
 
     fn sleep(&mut self, ticks: Ticks) {
         self.set_ticks(ticks);
-        SCHEDULER.cs(|s| s.process_sleep(self.prio(), ticks));
+        let s = SCHEDULER.get_access(&CriticalSection::activate());
+        s.process_sleep(self.prio(), ticks);
     }
 }

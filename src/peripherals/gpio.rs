@@ -1,7 +1,5 @@
 use core::marker::PhantomData;
 
-use crate::kernel::Syncable;
-
 use super::MemMappedRegister;
 
 
@@ -85,7 +83,6 @@ pub struct Pin<const N: usize, MODE, PULL> {
 }
 
 unsafe impl<const N: usize, MODE, PULL> Sync for Pin<N, MODE, PULL> {}
-impl<const N: usize, MODE, PULL> Syncable for Pin<N, MODE, PULL> {}
 
 impl<const N: usize, MODE, PULL> Pin<N, MODE, PULL> {
     pub(crate) const fn new() -> Pin<N, Input, PullUp> {

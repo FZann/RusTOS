@@ -3,9 +3,7 @@ use core::arch::asm;
 use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 
-use super::Syncable;
-
-//use cortex_m::Peripherals;
+use super::CriticalSection;
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
 const SYST_CSR_ENABLE: usize = 1 << 0;
@@ -151,11 +149,9 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    SCHEDULER.cs(|s|  {
-            s.inc_system_ticks();
-            s.schedule_next();
-        }
-    );
+    let s = SCHEDULER.get_access(&CriticalSection::activate());
+    s.inc_system_ticks();
+    s.schedule_next();
 }
 
 pub unsafe fn request_context_switch() {
@@ -306,7 +302,8 @@ pub(crate) fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
-    SCHEDULER.cs(|s| s.sys_call = sys_call);
+    let s = SCHEDULER.get_access(&CriticalSection::activate());
+    s.sys_call = sys_call;
 
     unsafe {
         match sys_call {
@@ -343,9 +340,10 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
+    let s = SCHEDULER.get_access(&CriticalSection::activate());
     unsafe {
 
-        match SCHEDULER.sys_call {
+        match s.sys_call {
             SysCallType::Nop => (),
             SysCallType::StartScheduler => {
                 //let mut p = cortex_m::Peripherals::take().unwrap();
@@ -370,12 +368,12 @@ pub extern "C" fn SVCall() {
                 //nvic.set_priority(Interrupts::SysTick, 1);
                 //nvic.set_priority(Interrupts::PendSV, 255);
 
-                SCHEDULER.cs(|s| s.start());
+                s.start();
             }
 
-            SysCallType::ProcessIdle => SCHEDULER.cs(|s| s.running_idle()),
-            SysCallType::ProcessStop => SCHEDULER.cs(|s| s.running_stop()),
-            SysCallType::ProcessSleep(ticks) => SCHEDULER.cs(|s| s.running_sleep(ticks)),
+            SysCallType::ProcessIdle => s.running_idle(),
+            SysCallType::ProcessStop => s.running_stop(),
+            SysCallType::ProcessSleep(ticks) => s.running_sleep(ticks),
         };
     }
 }

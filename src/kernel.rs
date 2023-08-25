@@ -5,6 +5,9 @@ pub mod semaphores;
 
 mod armv7em_arch;
 
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
+
 // Aliasing per poter usare la compilazione condizionale
 pub(crate) use self::armv7em_arch::idle_task;
 pub use self::armv7em_arch::load_first_process;
@@ -93,21 +96,46 @@ impl BitVec {
 }
 
 
+pub struct CriticalSection {
+    cs: PhantomData<u32>
+}
 
-// Astrazione per rendere Sync-safe le shared globals.
-// In questo modo possiamo accedere a delle static, renderle mutabili
-// e accedere ai metodi mutabili.
-// E' Sync-safe siccome siamo su un sistema mono-core. Disabilitando gli
-// interrupt rende impossibile la modifica concorrenziale dei dati.
+impl CriticalSection {
+    pub fn activate() -> Self {
+        interrupt_disable();
+        Self { cs : PhantomData }
+    }
 
-// Le closures non si possono usare!!!!!
-pub trait Syncable: Sync {
-   fn cs(&self, f: impl Fn(&mut Self)) {
-      interrupt_disable();
-        unsafe { 
-            f(&mut *(self as *const Self as *mut Self));
-            interrupt_enable();
-       };
+    // Funzione per il solo scopo di segnalare al compilatore un utilizzo, seppur fittizio
+    fn private_use(&self) -> &Self {
+        self
+    }
+}
+
+impl Drop for CriticalSection {
+    fn drop(&mut self) {
+        interrupt_enable();
+    }
+}
+
+pub struct SyncCell<T> {
+    obj: UnsafeCell<T>
+}
+
+unsafe impl<T> Sync for SyncCell<T> {}
+
+impl<T> SyncCell<T> {
+    pub const fn new(obj: T) -> Self {
+        Self { 
+            obj: UnsafeCell::new(obj),
+        }
+    }
+
+    pub fn get_access(&self, cs: &CriticalSection) -> &mut T {
+        unsafe {
+            cs.private_use();
+            &mut (*self.obj.get())
+        }
     }
 }
 
