@@ -1,15 +1,14 @@
 use core::arch::asm;
+use core::ptr::NonNull;
 
 use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 
-use super::CriticalSection;
+use crate::kernel::registers::Peripheral;
+use crate::kernel::CriticalSection;
+
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
-const SYST_CSR_ENABLE: usize = 1 << 0;
-const SYST_CSR_TICKINT: usize = 1 << 1;
-const SYST_CSR_CLKSOURCE: usize = 1 << 2;
-
 
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
@@ -39,24 +38,95 @@ impl Interrupts {
     }
 }
 
+struct Core {
 
-/*
-#[allow(dead_code)]
-extern "C" {
-    //#[link_section = ".static_kernel_variables"]
-    //static ld_stack_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data_end: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_bss_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_bss_end: u32;
 }
-*/
+
+pub enum ClockSource {
+    ExternalClock = 0,
+    CoreClock = 1 << 2,
+}
+
+
+
+/// ZST per gestire l'accesso alle periferiche in memoria
+struct SysTickTimer<const ADDR: usize>;
+
+/// Struttura dati effettiva sottostante allo ZST di accesso
+#[repr(C)]
+pub struct SysTickRegs {
+    crs: u32,
+    rvr: u32,
+    cvr: u32,
+    calib: u32,
+}
+
+impl<const ADDR: usize> SysTickTimer<ADDR> {
+    pub const fn define() -> Self {
+        SysTickTimer::<ADDR>
+    }
+}
+
+impl<const ADDR: usize> Peripheral for SysTickTimer<ADDR> {
+    type Registers = SysTickRegs;
+    const MEM: NonNull<Self::Registers> = NonNull::new(ADDR as *mut Self::Registers).unwrap();
+}
+
+
+impl SysTickRegs {
+    const ENABLE: u32 = 1;
+    const TICKINT: u32 = 1 << 1;
+    const CLKSOURCE: u32 = 1 << 2;
+    //const SKEW: u32 = 1 << 30;
+    const TENMS_MASK: u32 = 0x00FF_FFFF;
+
+    pub fn start(&mut self) {
+        self.crs |= Self::ENABLE;
+    }
+
+    pub fn stop(&mut self) {
+        self.crs &= !Self::ENABLE;
+    }
+
+    pub fn set_clocksource(&mut self, cksrc: ClockSource) -> &mut Self {
+        self.crs &= !Self::CLKSOURCE;
+        self.crs |= cksrc as u32;
+        self
+    }
+
+    pub fn int_enable(&mut self) -> &mut Self {
+        self.crs |= Self::TICKINT;
+        self
+    }
+
+    pub fn init(&mut self) {
+        self.stop();
+        let reload = self.get_calibration();
+        self.set_reload(reload).zero_count();
+        self.set_clocksource(ClockSource::CoreClock).int_enable().start();
+    }
+
+    pub fn zero_count(&mut self) -> &mut Self {
+        self.cvr = 0;
+        self
+    }
+
+    pub fn set_reload(&mut self, reload: u32) -> &mut Self {
+        self.rvr = reload;
+        self
+    }
+
+    pub fn get_calibration(&mut self) -> u32 {
+        // let skew = !((self.cvr & Self::SKEW) == Self::SKEW);
+        let tenms = self.calib & Self::TENMS_MASK;
+        tenms
+    }
+
+
+}
+
+
+static SYSTICK: SysTickTimer<0xE000_E010> = SysTickTimer::define();
 
 #[doc(hidden)]
 #[derive(Clone, Copy)]
@@ -149,9 +219,10 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    let s = SCHEDULER.get_access(&CriticalSection::activate());
-    s.inc_system_ticks();
-    s.schedule_next();
+    unsafe {
+        SCHEDULER.inc_system_ticks();
+        SCHEDULER.schedule_next();
+    }
 }
 
 pub unsafe fn request_context_switch() {
@@ -248,6 +319,7 @@ pub unsafe extern "C" fn PendSV() {
         "ldmfd  r0!, {{r4-r11}}",   // Load Context
         "str    r0, [r2]",          // Saves new StackPointer value in &dyn Process
         "msr	psp, r0",           // Moves StackPointer in PSP
+        // Instruction Syncro Barrier per sicurezza
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
@@ -302,10 +374,9 @@ pub(crate) fn idle_task() -> ! {
 
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
-    let s = SCHEDULER.get_access(&CriticalSection::activate());
-    s.sys_call = sys_call;
-
     unsafe {
+        SCHEDULER.sys_call = sys_call;
+
         match sys_call {
             SysCallType::Nop => (),
             SysCallType::ProcessIdle =>     asm!("svc    1"),
@@ -340,26 +411,14 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    let s = SCHEDULER.get_access(&CriticalSection::activate());
     unsafe {
-
-        match s.sys_call {
+        match SCHEDULER.sys_call {
             SysCallType::Nop => (),
             SysCallType::StartScheduler => {
-                //let mut p = cortex_m::Peripherals::take().unwrap();
-
-                let syst: *mut usize = 0xE000_E010 as *mut usize;
-                (*syst) |= SYST_CSR_CLKSOURCE;
-                (*syst.offset(1)) = *syst.offset(3);
-                (*syst) |= SYST_CSR_TICKINT | SYST_CSR_ENABLE;
-               
-                /*
-                let sys_tick = &mut p.SYST;
-                let reload = cortex_m::peripheral::SYST::get_ticks_per_10ms();
-                sys_tick.set_reload(reload);
-                sys_tick.enable_interrupt();
-                sys_tick.enable_counter();
-                */
+                
+                let cs = CriticalSection::activate();
+                let systick = SYSTICK.get_access(&cs);
+                systick.init();
 
                 //let nv: *mut usize = 0xE000_E100 as *mut usize;
 
@@ -367,13 +426,13 @@ pub extern "C" fn SVCall() {
                 //nvic.set_priority(Interrupts::SVCall, 0);
                 //nvic.set_priority(Interrupts::SysTick, 1);
                 //nvic.set_priority(Interrupts::PendSV, 255);
-
-                s.start();
+                
+                SCHEDULER.start();
             }
 
-            SysCallType::ProcessIdle => s.running_idle(),
-            SysCallType::ProcessStop => s.running_stop(),
-            SysCallType::ProcessSleep(ticks) => s.running_sleep(ticks),
+            SysCallType::ProcessIdle => SCHEDULER.running_idle(),
+            SysCallType::ProcessStop => SCHEDULER.running_stop(),
+            SysCallType::ProcessSleep(ticks) => SCHEDULER.running_sleep(ticks),
         };
     }
 }

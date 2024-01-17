@@ -1,7 +1,8 @@
-use crate::kernel::Ticks;
-use core::{cell::Cell, mem::transmute};
+use core::cell::Cell;
 
-use super::{scheduler::{Scheduler, SCHEDULER}, CriticalSection};
+use crate::kernel::Ticks;
+
+use super::scheduler::{Scheduler, SCHEDULER};
 
 pub type TaskHandle = fn() -> !;
 type StackPointer<'sp> = Option<&'sp usize>;
@@ -71,49 +72,50 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
         self.stack[WORDS - 15] = 0x5; // R5
         self.stack[WORDS - 16] = 0x4; // R4
 
+        // Impostazione dello stack pointer
         let sp = &self.stack[WORDS - 16];
         unsafe {
-            self.sp = Some(transmute(sp));
+            self.sp = Some(core::mem::transmute(sp));
         }
     }
 
+    #[inline(always)]
     fn handle(&self) -> TaskHandle {
         self.task
     }
 
+    #[inline(always)]
     fn prio(&self) -> usize {
         self.prio as usize
     }
 
+    #[inline(always)]
     fn sp(&self) -> StackPointer {
         self.sp
     }
 
+    #[inline(always)]
     fn set_ticks(&self, ticks: Ticks) {
         self.ticks.set(ticks);
     }
 
     fn decrement_ticks(&self) -> Ticks {
         let ticks = self.ticks.get();
-        if ticks > 0 {
-            self.set_ticks(ticks - 1);
-        }
-        ticks
-    }
+            if ticks > 0 {
+                self.set_ticks(ticks - 1);
+            }
+            ticks
+            }
 
     fn idle(&mut self) {
-        let s = SCHEDULER.get_access(&CriticalSection::activate());
-        s.process_idle(self.prio());
+        unsafe { SCHEDULER.process_idle(self.prio()); }
     }
 
     fn stop(&mut self) {
-        let s = SCHEDULER.get_access(&CriticalSection::activate());
-        s.process_stop(self.prio());
+        unsafe { SCHEDULER.process_stop(self.prio()); }
     }
 
     fn sleep(&mut self, ticks: Ticks) {
-        self.set_ticks(ticks);
-        let s = SCHEDULER.get_access(&CriticalSection::activate());
-        s.process_sleep(self.prio(), ticks);
+        unsafe { SCHEDULER.process_sleep(self.prio(), ticks); }
     }
 }

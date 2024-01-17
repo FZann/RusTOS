@@ -1,38 +1,77 @@
 {
-    // Usare IntelliSense per informazioni sui possibili attributi.
-    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
-    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            /* Configuration for the STM32G474 Nucleo board */
-            "type": "cortex-debug",
-            "request": "launch",
-            "name": "Debug (OpenOCD)",
-            "servertype": "openocd",
-            "cwd": "${workspaceRoot}",
-            "preLaunchTask": "Cargo Build (debug)",
-            //"runToMain": true,
-            "runToEntryPoint": "__ENTRY",
-            "executable": "./target/thumbv7em-none-eabihf/debug/RusTOS",
-            /* Run `cargo build --example itm` and uncomment this line to run itm example */
-            // "executable": "./target/thumbv7em-none-eabihf/debug/examples/itm",
-            "device": "STM32F334R8T6",
-            "configFiles": [
-                "interface/stlink.cfg",
-                "target/stm32f3x.cfg"
-            ],
-            "showDevDebugOutput": "raw",
-            "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd",
-            "swoConfig": {
-                "enabled": true,
-                "cpuFrequency": 8000000,
-                "swoFrequency": 2000000,
-                "source": "probe",
-                "decoders": [
-                    { "type": "console", "label": "ITM", "port": 0 }
-                ]
-            }
+  // Usare IntelliSense per informazioni sui possibili attributi.
+  // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+  // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "probe-rs-debug",
+      "request": "launch",
+      "name": "probe_rs debug",
+      "cwd": "${workspaceFolder}",
+      //!MODIFY (or remove)
+      "speed": 24000,
+      //!MODIFY (or remove)
+      //"probe": "VID:PID:<Serial>",
+      "runtimeExecutable": "probe-rs",
+      "runtimeArgs": [
+        "dap-server"
+      ],
+      //!MODIFY
+      "chip": "STM32F334R8T6",
+      "flashingConfig": {
+        "flashingEnabled": true,
+        "haltAfterReset": false,
+        "formatOptions": {
+          //!MODIFY (or remove). Valid values are: 'bin', 'hex', 'elf'(default), 'idf'
+          "format": "elf"
         }
-    ]
+      },
+      "coreConfigs": [
+        {
+          "coreIndex": 0,
+          //!MODIFY
+          "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+          //!MODIFY
+          "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd"
+        }
+      ],
+      "env": {
+        //!MODIFY (or remove)
+        // If you set this variable, check the VSCode console log window for the location of the log file.
+        "RUST_LOG": "info"
+      },
+      // Info, Debug
+      "consoleLogLevel": "Console"
+    },
+
+    {
+      "type": "probe-rs-debug",
+      "request": "attach",
+      "name": "probe_rs attach",
+      "cwd": "${workspaceFolder}",
+      //!MODIFY (or remove)
+      "speed": 24000,
+      //!MODIFY
+      "chip": "STM32F334R8T6",
+      //!MODIFY (or remove)
+      //"probe": "VID:PID:<Serial>",
+      "coreConfigs": [
+        {
+          "coreIndex": 0,
+          //!MODIFY
+          "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+          //!MODIFY
+          "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd"
+        }
+      ],
+      "env": {
+        //!MODIFY (or remove)
+        // If you set this variable, check the VSCode console log window for the location of the log file.
+        "RUST_LOG": "info"
+      },
+      // Info, Debug
+      "consoleLogLevel": "Console"
+    }
+  ]
 }

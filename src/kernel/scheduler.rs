@@ -7,7 +7,7 @@ use super::SyncCell;
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
 //pub static SCHEDULER: Preemptive = Preemptive::new();
-pub static SCHEDULER: SyncCell<Preemptive> = SyncCell::new(Preemptive::new());
+pub static mut SCHEDULER: Preemptive = Preemptive::new();
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
 
 pub trait Scheduler<'p> {
@@ -45,6 +45,8 @@ pub struct Preemptive<'p> {
     schedulable: BitVec,
     sleeping: BitVec,
 }
+
+unsafe impl<'p> Sync for Preemptive<'p> {}
 
 impl<'p> Preemptive<'p> {
     pub const fn new() -> Self {

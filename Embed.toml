@@ -1,0 +1,5 @@
+[default.general]
+chip = "STM32F334R8Tx"
+
+[default.rtt]
+enabled = false

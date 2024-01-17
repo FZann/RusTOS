@@ -2,11 +2,11 @@ pub mod processes;
 pub mod queues;
 pub mod scheduler;
 pub mod semaphores;
+pub mod registers;
 
 mod armv7em_arch;
 
 use core::cell::UnsafeCell;
-use core::marker::PhantomData;
 
 // Aliasing per poter usare la compilazione condizionale
 pub(crate) use self::armv7em_arch::idle_task;
@@ -14,8 +14,7 @@ pub use self::armv7em_arch::load_first_process;
 pub use self::armv7em_arch::svc as SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
 pub use self::armv7em_arch::request_context_switch;
-use self::armv7em_arch::interrupt_disable;
-use self::armv7em_arch::interrupt_enable;
+use self::armv7em_arch::{interrupt_disable, interrupt_enable};
 
 pub type Ticks = usize;
 
@@ -96,19 +95,16 @@ impl BitVec {
 }
 
 
-pub struct CriticalSection {
-    cs: PhantomData<u32>
-}
+/// Struttura zero-sized che garantisce al kernel l'accesso alle periferiche/globali
+/// eliminando le data-races. 
+/// L'implementazione disattiva gli interrupt. Per un sistema single-core è sufficiente, ma
+/// non è adatta ai sistemi multicore.
+pub struct CriticalSection;
 
 impl CriticalSection {
-    pub fn activate() -> Self {
+    pub fn activate() -> CriticalSection {
         interrupt_disable();
-        Self { cs : PhantomData }
-    }
-
-    // Funzione per il solo scopo di segnalare al compilatore un utilizzo, seppur fittizio
-    fn private_use(&self) -> &Self {
-        self
+        CriticalSection
     }
 }
 
@@ -131,11 +127,14 @@ impl<T> SyncCell<T> {
         }
     }
 
-    pub fn get_access(&self, cs: &CriticalSection) -> &mut T {
-        unsafe {
-            cs.private_use();
-            &mut (*self.obj.get())
-        }
+    pub fn get_access<'cs>(&'cs self, _cs: &'cs CriticalSection) -> &'cs mut T {
+        unsafe { &mut (*self.obj.get()) }
+    }
+
+    pub fn with(&self, mut f: impl FnMut(&mut T, &CriticalSection)) {
+        let cs: CriticalSection = CriticalSection::activate();
+        f(self.get_access(&cs), &cs);
+        drop(cs);
     }
 }
 

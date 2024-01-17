@@ -26,7 +26,7 @@ where
     pub fn push(&mut self, object: T) {
         // Andiamo in attesa col semaforo, perché la coda è piena
         while self.buf[self.head].is_some() {
-            self.sem.wait();
+            //self.sem.wait();
         }
 
         self.buf[self.head] = Some(object);
@@ -34,13 +34,13 @@ where
         if self.head >= SIZE {
             self.head = 0;
         }
-        self.sem.release(); // Segnalazione per eventuali pop in attesa
+        //self.sem.release(); // Segnalazione per eventuali pop in attesa
     }
 
     pub fn pop(&mut self) -> T {
         // Andiamo in attesa col semaforo, perché la coda è vuota
         while self.buf[self.tail].is_none() {
-            self.sem.wait();
+            //self.sem.wait();
         }
 
         // Unwrap non panica sicuramente, abbiamo fatto il test prima!
@@ -49,7 +49,7 @@ where
         if self.tail >= SIZE {
             self.tail = 0;
         }
-        self.sem.release(); // Segnalazione per eventuali push in attesa
+        //self.sem.release(); // Segnalazione per eventuali push in attesa
 
         result
     }

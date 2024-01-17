@@ -1,8 +1,7 @@
 use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{SCHEDULER, Scheduler};
 use crate::kernel::BitVec;
-
-use super::CriticalSection;
+use crate::kernel::CriticalSection;
 
 pub struct VecSemaphore {
     locked: BitVec,
@@ -15,17 +14,19 @@ impl VecSemaphore {
         }
     }
 
-    pub fn wait(&mut self) {
-        let s = SCHEDULER.get_access(&CriticalSection::activate());
-        self.locked.set(s.running_id());
-        s.running_stop();
+    pub fn wait(&mut self, _cs: &CriticalSection) {
+        unsafe {
+            self.locked.set(SCHEDULER.running_id());
+            SCHEDULER.running_stop();
+        }
     }
 
-    pub fn release(&mut self) {
+    pub fn release(&mut self, _cs: &CriticalSection) {
         if let Ok(id) = self.locked.first_set() {
-            self.locked.clear(id);
-            let s = SCHEDULER.get_access(&CriticalSection::activate());
-            s.process_idle(id);
+            unsafe {
+                self.locked.clear(id);
+                SCHEDULER.process_idle(id);
+            }
         }
     }
 }
@@ -39,22 +40,23 @@ impl<'p> Semaphore<'p> {
         Self { locked: None }
     }
 
-    pub fn wait(&mut self) {
+    pub fn wait(&mut self, _cs: &CriticalSection) {
         if self.locked.is_some() {
             return;
         }
-
-        let s = SCHEDULER.get_access(&CriticalSection::activate());
-        self.locked = s.running;
-        s.running_stop();
+        unsafe {
+            self.locked = SCHEDULER.running;
+            SCHEDULER.running_stop();
+        }
     }
 
-    pub fn release(&mut self) {
+    pub fn release(&mut self, _cs: &CriticalSection) {
         if let Some(locked) = self.locked {
             let prio = locked.prio();
             self.locked = None;
-            let s = SCHEDULER.get_access(&CriticalSection::activate());
-            s.process_idle(prio);
+            unsafe {
+                SCHEDULER.process_idle(prio);
+            }
         }
     }
 }
