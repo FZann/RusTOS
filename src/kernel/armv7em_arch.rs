@@ -1,11 +1,15 @@
 use core::arch::asm;
-use core::ptr::NonNull;
+
 
 use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
 
-use crate::kernel::registers::Peripheral;
+
 use crate::kernel::CriticalSection;
+use crate::make_peripheral;
+
+use super::processes::Process;
+use super::registers::Peripheral;
 
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
@@ -26,20 +30,42 @@ pub struct ExceptionFrame {
 
 
 #[derive(Clone, Copy)]
-enum Interrupts {
+pub(crate) enum Interrupts {
     SVCall = 11,
     PendSV = 14,
     SysTick = 15,
+}
+
+
+pub(crate) enum IntPrio {
+    Max = 0,
+    Pri01 = 0x10,
+    Pri02 = 0x20,
+    Pri03 = 0x30,
+    Pri04 = 0x40,
+    Pri05 = 0x50,
+    Pri06 = 0x60,
+    Pri07 = 0x70,
+    Pri08 = 0x80,
+    Pri09 = 0x90,
+    Pri10 = 0xA0,
+    Pri11 = 0xB0,
+    Pri12 = 0xC0,
+    Pri13 = 0xD0,
+    Pri14 = 0xE0,
+    Min = 0xF0,
+}
+
+impl IntPrio {
+    fn value(self) -> usize {
+        self as usize
+    }
 }
 
 impl Interrupts {
     fn number(self) -> u16 {
         self as u16
     }
-}
-
-struct Core {
-
 }
 
 pub enum ClockSource {
@@ -49,8 +75,6 @@ pub enum ClockSource {
 
 
 
-/// ZST per gestire l'accesso alle periferiche in memoria
-struct SysTickTimer<const ADDR: usize>;
 
 /// Struttura dati effettiva sottostante allo ZST di accesso
 #[repr(C)]
@@ -60,18 +84,6 @@ pub struct SysTickRegs {
     cvr: u32,
     calib: u32,
 }
-
-impl<const ADDR: usize> SysTickTimer<ADDR> {
-    pub const fn define() -> Self {
-        SysTickTimer::<ADDR>
-    }
-}
-
-impl<const ADDR: usize> Peripheral for SysTickTimer<ADDR> {
-    type Registers = SysTickRegs;
-    const MEM: NonNull<Self::Registers> = NonNull::new(ADDR as *mut Self::Registers).unwrap();
-}
-
 
 impl SysTickRegs {
     const ENABLE: u32 = 1;
@@ -121,12 +133,76 @@ impl SysTickRegs {
         let tenms = self.calib & Self::TENMS_MASK;
         tenms
     }
-
-
 }
 
 
-static SYSTICK: SysTickTimer<0xE000_E010> = SysTickTimer::define();
+/// Struttura dati effettiva sottostante allo ZST di accesso
+#[repr(C)]
+pub struct NVICRegs {
+    iser: [usize; 8],
+    void1: [usize; 24],
+    icer: [usize; 8],
+    ispr: [usize; 8],
+    void2: [usize; 24],
+    icpr: [usize; 8],
+    iabr: [usize; 8],
+    void3: [usize; 32],
+    ipr: [usize; 60],
+    stir: usize,
+}
+
+impl NVICRegs {
+    pub fn enable_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.iser[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+
+    pub fn disable_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.icer[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn pend_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.ispr[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn clear_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.icpr[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn is_interrupt_active(&self, int: Interrupts) -> bool {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  (self.icpr[0] & 1 << n) != 0,
+            _ => false,
+        }
+    }
+
+    pub fn set_interrupt_prio(&mut self, int: Interrupts, prio: IntPrio) {
+        let n = (int.number() >> 2) as usize; // Divide per 4
+        self.ipr[n] = prio.value() << 8 * n;
+    }
+
+}
+
+make_peripheral!(SysTickTimer: 0xE000_E010, SysTickRegs);
+make_peripheral!(NVIC: 0xE000_E100, NVICRegs);
+
 
 #[doc(hidden)]
 #[derive(Clone, Copy)]
@@ -219,10 +295,9 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
-    unsafe {
-        SCHEDULER.inc_system_ticks();
-        SCHEDULER.schedule_next();
-    }
+    let cs = CriticalSection::activate();
+    SCHEDULER.get(&cs).inc_system_ticks();
+    SCHEDULER.get(&cs).schedule_next();
 }
 
 pub unsafe fn request_context_switch() {
@@ -309,6 +384,8 @@ pub unsafe extern "C" fn PendSV() {
         //"bl     switch_to_next",
         "ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
         "str    r2, [r3, #0]",      // Save &dyn Process' data as running
+        //"ldr    r1, [r3, #12]",     // Get next &dyn Process' StackPointer to switch in
+        //"str    r1, [r3, #4]",      // Save &dyn Process' data as running
 
         // Azzera il "next &dyn Process"
         "mov    r1, #0",
@@ -335,11 +412,13 @@ e corrompe i puntamenti dell'assembly che viene dopo.
 
 /// Serve per cambiare i task con codice Rust, per maggiore sicurezza
 #[no_mangle]
+#[inline(always)]
 pub unsafe extern "C" fn switch_to_next() {
     SCHEDULER.running = SCHEDULER.next;
     SCHEDULER.next = None;
 }
 */
+
 
 #[naked]
 #[no_mangle]
@@ -364,7 +443,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
     );
 }
 
-pub(crate) fn idle_task() -> ! {
+pub(crate) fn idle_task(_task: &mut dyn Process) -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -375,14 +454,14 @@ pub(crate) fn idle_task() -> ! {
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
     unsafe {
-        SCHEDULER.sys_call = sys_call;
+        SCHEDULER.unsafe_get().sys_call = sys_call;
 
         match sys_call {
             SysCallType::Nop => (),
-            SysCallType::ProcessIdle =>     asm!("svc    1"),
-            SysCallType::ProcessSleep(_) => asm!("svc    2"),
-            SysCallType::ProcessStop =>     asm!("svc    3"),
-            SysCallType::StartScheduler =>  asm!("svc    4"),
+            SysCallType::ProcessIdle(_) =>      asm!("svc    1"),
+            SysCallType::ProcessSleep(_, _) =>  asm!("svc    2"),
+            SysCallType::ProcessStop(_) =>      asm!("svc    3"),
+            SysCallType::StartScheduler =>      asm!("svc    4"),
         }
     }
 }
@@ -409,31 +488,32 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 
 
 
+/// Un accesso safe qui non serve, perché siamo al massimo possibile della priorità
+/// dell'NVIC. Questo codice non può essere interrotto da nulla.
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    unsafe {
-        match SCHEDULER.sys_call {
-            SysCallType::Nop => (),
-            SysCallType::StartScheduler => {
-                
-                let cs = CriticalSection::activate();
-                let systick = SYSTICK.get_access(&cs);
-                systick.init();
+    let s = unsafe { SCHEDULER.unsafe_get() };
 
-                //let nv: *mut usize = 0xE000_E100 as *mut usize;
+    match s.sys_call {
+        SysCallType::Nop => (),
+        SysCallType::StartScheduler => {
+            let nvic = unsafe { NVIC::regs() };
+            nvic.enable_interrupt(Interrupts::SVCall);
+            nvic.enable_interrupt(Interrupts::PendSV);
+            nvic.enable_interrupt(Interrupts::SysTick);
+            nvic.set_interrupt_prio(Interrupts::SVCall, IntPrio::Max);
+            nvic.set_interrupt_prio(Interrupts::SysTick, IntPrio::Pri01);
+            nvic.set_interrupt_prio(Interrupts::PendSV, IntPrio::Min);
 
-                //let nvic = &mut p.NVIC;
-                //nvic.set_priority(Interrupts::SVCall, 0);
-                //nvic.set_priority(Interrupts::SysTick, 1);
-                //nvic.set_priority(Interrupts::PendSV, 255);
-                
-                SCHEDULER.start();
-            }
+            let systick = unsafe { SysTickTimer::regs() };
+            systick.init();
 
-            SysCallType::ProcessIdle => SCHEDULER.running_idle(),
-            SysCallType::ProcessStop => SCHEDULER.running_stop(),
-            SysCallType::ProcessSleep(ticks) => SCHEDULER.running_sleep(ticks),
-        };
-    }
+            s.start();  
+        }
+
+        SysCallType::ProcessIdle(prio) => s.process_idle(prio),
+        SysCallType::ProcessStop(prio) => s.process_stop(prio),
+        SysCallType::ProcessSleep(prio, ticks) => s.process_sleep(prio, ticks),
+    };
 }
 

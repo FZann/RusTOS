@@ -1,6 +1,5 @@
 use crate::kernel::CriticalSection;
 use core::cell::UnsafeCell;
-use core::ptr::NonNull;
 use core::ptr;
 
 #[repr(transparent)]
@@ -95,47 +94,34 @@ impl<T: Copy> WO<T> {
 
 pub trait Peripheral {
     type Registers;
-    const MEM: NonNull<Self::Registers>;
+    const PTR: *const Self::Registers;
 
     #[inline(always)]
-    unsafe fn regs(&self) -> &mut Self::Registers {
-        &mut *Self::MEM.as_ptr()
+    unsafe fn regs<'r>() -> &'r mut Self::Registers {
+        core::mem::transmute(Self::PTR)
     }
 
     #[inline(always)]
-    fn get_access<'cs>(&'cs self, _cs: &'cs CriticalSection) -> &'cs mut Self::Registers {
-        unsafe { self.regs() }
+    fn get(_cs: &CriticalSection) -> &mut Self::Registers {
+        unsafe { Self::regs() }
     }
 
-    /// Esecuzione di una funzione, racchiusa in una critical section
-    fn with(&self, mut f: impl FnMut(&mut Self::Registers)) {
+    /// Esecuzione di una funzione racchiusa in una critical section
+    fn with(mut f: impl FnMut(&mut Self::Registers)) {
         let cs = CriticalSection::activate();
-        f(unsafe { self.regs() });
+        f(unsafe { Self::regs() });
         drop(cs);
     }
 }
 
 
 #[macro_export] macro_rules! make_peripheral {
-    ($peripheral: ident: $addr:expr, $regs: ident => $static: ident) => {
-        pub mod $peripheral {
-            use core::ptr::NonNull;
-            use crate::kernel::registers::Peripheral;
-            use super::$regs;
+    ($peripheral: ident: $addr:expr, $regs: ident) => {
+        pub struct $peripheral;
 
-            pub struct $peripheral<const ADDR: usize>;
-            pub static mut $static: $peripheral<$addr> = $peripheral::define();
-
-            impl<const ADDR: usize> $peripheral<ADDR> {
-                pub const fn define() -> Self {
-                    $peripheral::<ADDR>
-                }
-            }
-
-            impl<const ADDR: usize> Peripheral for $peripheral<ADDR> {
-                type Registers = $regs;
-                const MEM: NonNull<Self::Registers> = NonNull::new(ADDR as *mut Self::Registers).unwrap();
-            }
+        impl crate::kernel::registers::Peripheral for $peripheral {
+            type Registers = $regs;
+            const PTR: *const Self::Registers = $addr as *const Self::Registers;
         }
     };
 }

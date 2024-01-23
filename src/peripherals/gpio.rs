@@ -15,12 +15,6 @@ pub struct PullUp;
 impl OutputType for PushPull {}
 impl OutputType for OpenDrain {}
 
-pub trait GpioPort {
-    fn set_high(&mut self, n: usize);
-    fn set_low(&mut self, n: usize);
-    fn set_dir(&mut self, n: usize, dir: u32);
-}
-
 pub trait GpioPin {
     fn set_high(&mut self);
     fn set_low(&mut self);
@@ -43,24 +37,22 @@ pub struct GpioReg {
     br: WO<u32>,
 }
 
-impl GpioPort for GpioReg {
-    fn set_high(&mut self, n: usize) {
+impl GpioReg {
+    pub fn set_high(&mut self, n: usize) {
         unsafe { self.bsr.write(1 << n); }
     }
 
-    fn set_low(&mut self, n: usize) {
+    pub fn set_low(&mut self, n: usize) {
         unsafe { self.bsr.write(1 << (n + 16)); }
     }
 
-    fn set_dir(&mut self, n: usize, dir: u32) {
+    pub fn set_dir(&mut self, n: usize, dir: u32) {
         unsafe { self.mode.write(dir << (n + n)); }
     }
 }
 
- 
-//make_peripheral!(GPIOAreg: 0x4800_0000, GpioReg => GPIOA);
-/*
+make_peripheral!(GPIOA: 0x4800_0000, GpioReg);
 make_peripheral!(GPIOB: 0x4800_0400, GpioReg);
 make_peripheral!(GPIOC: 0x4800_0800, GpioReg);
 make_peripheral!(GPIOD: 0x4800_0C00, GpioReg);
-*/
+

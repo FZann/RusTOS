@@ -7,7 +7,7 @@
     {
       "type": "probe-rs-debug",
       "request": "launch",
-      "name": "probe_rs debug",
+      "name": "debug",
       "cwd": "${workspaceFolder}",
       //!MODIFY (or remove)
       "speed": 24000,
@@ -48,7 +48,7 @@
     {
       "type": "probe-rs-debug",
       "request": "attach",
-      "name": "probe_rs attach",
+      "name": "attach",
       "cwd": "${workspaceFolder}",
       //!MODIFY (or remove)
       "speed": 24000,

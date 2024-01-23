@@ -1,13 +1,13 @@
 use crate::kernel::processes::{Process, Task};
-use crate::kernel::{BitVec, SysCallType, Ticks};
 use crate::kernel::request_context_switch;
+use crate::kernel::{BitVec, SysCallType, Ticks};
 
-use super::SyncCell;
+use super::{CriticalSection, SyncCell};
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
 //pub static SCHEDULER: Preemptive = Preemptive::new();
-pub static mut SCHEDULER: Preemptive = Preemptive::new();
+pub static SCHEDULER: SyncCell<Preemptive> = SyncCell::new(Preemptive::new());
 pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
 
 pub trait Scheduler<'p> {
@@ -28,6 +28,10 @@ pub trait Scheduler<'p> {
     fn remove_process(&mut self, prio: usize) -> Result<(), ()>;
 }
 
+pub fn access_scheduler<'cs>(_cs: &'cs CriticalSection) -> &'cs mut dyn Scheduler {
+    unsafe { core::mem::transmute(SCHEDULER.unsafe_get() as &mut dyn Scheduler) }
+}
+
 /// Lo Scheduler tiene in memoria anche le variabili che servono per completare
 /// un context switch. In questo modo evito di usare una serie di unsafe per
 /// la modifica dei valori, perché non risultano statici allo scheduler stesso
@@ -41,7 +45,7 @@ pub struct Preemptive<'p> {
     pub(crate) next: Option<&'p dyn Process>,
     /* !!! --------------------- !!! */
     pub(crate) sys_call: SysCallType,
-    processes: [Option<&'p dyn Process>; 32],
+    pub(crate) processes: [Option<&'p dyn Process>; 32],
     schedulable: BitVec,
     sleeping: BitVec,
 }
@@ -140,13 +144,17 @@ impl<'p> Scheduler<'p> for Preemptive<'p> {
         match (self.running_id(), self.schedulable.first_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                unsafe { request_context_switch(); }
+                unsafe {
+                    request_context_switch();
+                }
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
                 self.next = unsafe { Some(&IDLE_TASK) };
-                unsafe { request_context_switch(); }
+                unsafe {
+                    request_context_switch();
+                }
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla

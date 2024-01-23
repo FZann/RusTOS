@@ -1,11 +1,11 @@
-use core::cell::Cell;
+use core::{cell::Cell, mem::MaybeUninit};
 
 use crate::kernel::Ticks;
 
-use super::scheduler::{Scheduler, SCHEDULER};
+use super::{SysCallType, SystemCall};
 
-pub type TaskHandle = fn() -> !;
-type StackPointer<'sp> = Option<&'sp usize>;
+pub type TaskHandle = fn(&mut dyn Process) -> !;
+type StackPointer = MaybeUninit<usize>;
 
 pub trait Process {
     fn setup(&mut self);
@@ -25,25 +25,25 @@ pub trait Process {
 ///
 /// Process Control Block per un dispositivo ARM Cortex-M4.
 #[repr(C)]
-pub struct Task<'task, const WORDS: usize> {
+pub struct Task<const WORDS: usize> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    sp: StackPointer<'task>,
+    sp: StackPointer,
     /* !!! --------------------- !!! */
     stack: [usize; WORDS],
     task: TaskHandle,
-    ticks: Cell<Ticks>,
-    prio: u8,
+    prio: usize,
+    pub(crate) ticks: Cell<Ticks>,
 }
 
-impl<'task, const WORDS: usize> Task<'task, WORDS> {
-    pub const fn new(task: TaskHandle, prio: u8) -> Self {
+impl<const WORDS: usize> Task<WORDS> {
+    pub const fn new(task: TaskHandle, prio: usize) -> Self {
         if WORDS <= 32 {
             panic!("Stack troppo piccola!");
         };
 
         Self {
-            sp: None,
+            sp: MaybeUninit::uninit(),
             stack: [0; WORDS],
             task,
             prio,
@@ -52,15 +52,18 @@ impl<'task, const WORDS: usize> Task<'task, WORDS> {
     }
 }
 
-impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
+impl<const WORDS: usize> Process for Task<WORDS> {
     fn setup(&mut self) {
+        let pointer: [usize; 2] = unsafe { core::mem::transmute(self as &dyn Process) };
+
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
         self.stack[WORDS - 02] = self.task as usize; // PC
         self.stack[WORDS - 03] = 0xFFFFFFFD; // LR
         self.stack[WORDS - 04] = 0xC; // R12
         self.stack[WORDS - 05] = 0x3; // R3
         self.stack[WORDS - 06] = 0x2; // R2
-        self.stack[WORDS - 07] = 0x1; // R1
+        self.stack[WORDS - 07] = pointer[1]; // R1
+        self.stack[WORDS - 08] = pointer[0]; // R0
 
         // Software stack; non è strettamente necessaria, serve più per debug
         self.stack[WORDS - 09] = 0xB; // R11
@@ -73,10 +76,8 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
         self.stack[WORDS - 16] = 0x4; // R4
 
         // Impostazione dello stack pointer
-        let sp = &self.stack[WORDS - 16];
-        unsafe {
-            self.sp = Some(core::mem::transmute(sp));
-        }
+        let sp = &self.stack[WORDS - 16] as *const usize as usize;
+        self.sp.write(sp);
     }
 
     #[inline(always)]
@@ -86,7 +87,7 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
 
     #[inline(always)]
     fn prio(&self) -> usize {
-        self.prio as usize
+        self.prio
     }
 
     #[inline(always)]
@@ -101,21 +102,22 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
 
     fn decrement_ticks(&self) -> Ticks {
         let ticks = self.ticks.get();
-            if ticks > 0 {
-                self.set_ticks(ticks - 1);
-            }
-            ticks
-            }
+        if ticks > 0 {
+            self.set_ticks(ticks - 1);
+        }
+        ticks
+    }
 
     fn idle(&mut self) {
-        unsafe { SCHEDULER.process_idle(self.prio()); }
+        SystemCall(SysCallType::ProcessIdle(self.prio));
     }
 
     fn stop(&mut self) {
-        unsafe { SCHEDULER.process_stop(self.prio()); }
+        SystemCall(SysCallType::ProcessStop(self.prio));
     }
 
     fn sleep(&mut self, ticks: Ticks) {
-        unsafe { SCHEDULER.process_sleep(self.prio(), ticks); }
+        SystemCall(SysCallType::ProcessSleep(self.prio, ticks));
     }
+
 }

@@ -22,9 +22,9 @@ pub type Ticks = usize;
 #[derive(Clone, Copy)]
 pub enum SysCallType {
     Nop,
-    ProcessIdle,
-    ProcessSleep(Ticks),
-    ProcessStop,
+    ProcessIdle(usize),
+    ProcessSleep(usize, Ticks),
+    ProcessStop(usize),
     StartScheduler,
 }
 
@@ -32,21 +32,6 @@ pub enum SysCallType {
 pub enum HardFaultError {
     FromProcess = 1,
     FromPrivileged = 2,
-}
-
-#[inline(always)]
-pub fn idle() {
-    SystemCall(SysCallType::ProcessIdle);
-}
-
-#[inline(always)]
-pub fn sleep(ticks: Ticks) {
-    SystemCall(SysCallType::ProcessSleep(ticks));
-}
-
-#[inline(always)]
-pub fn stop() {
-    SystemCall(SysCallType::ProcessStop);
 }
 
 #[derive(Clone, Copy)]
@@ -106,6 +91,10 @@ impl CriticalSection {
         interrupt_disable();
         CriticalSection
     }
+
+    pub fn deactivate(self) {
+        drop(self);
+    }
 }
 
 impl Drop for CriticalSection {
@@ -127,14 +116,17 @@ impl<T> SyncCell<T> {
         }
     }
 
-    pub fn get_access<'cs>(&'cs self, _cs: &'cs CriticalSection) -> &'cs mut T {
+    pub fn get<'cs>(&'cs self, _cs: &'cs CriticalSection) -> &'cs mut T {
         unsafe { &mut (*self.obj.get()) }
     }
 
     pub fn with(&self, mut f: impl FnMut(&mut T, &CriticalSection)) {
         let cs: CriticalSection = CriticalSection::activate();
-        f(self.get_access(&cs), &cs);
+        f(self.get(&cs), &cs);
         drop(cs);
     }
-}
 
+    pub unsafe fn unsafe_get(&self) -> &mut T {
+        &mut (*self.obj.get())
+    }
+}
