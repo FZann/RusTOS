@@ -19,6 +19,11 @@ pub trait Process {
     fn idle(&mut self);
     fn stop(&mut self);
     fn sleep(&mut self, ticks: Ticks);
+    fn wait(&mut self, wait: &dyn Waitable);
+}
+
+pub trait Waitable {
+    
 }
 
 /// **PCB**
@@ -54,6 +59,7 @@ impl<const WORDS: usize> Task<WORDS> {
 
 impl<const WORDS: usize> Process for Task<WORDS> {
     fn setup(&mut self) {
+        // Questo permette di avere una reference alla struttura "task" nella funzione stessa
         let pointer: [usize; 2] = unsafe { core::mem::transmute(self as &dyn Process) };
 
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
@@ -118,6 +124,10 @@ impl<const WORDS: usize> Process for Task<WORDS> {
 
     fn sleep(&mut self, ticks: Ticks) {
         SystemCall(SysCallType::ProcessSleep(self.prio, ticks));
+    }
+
+    fn wait(&mut self, wait: &dyn Waitable) {
+        todo!()
     }
 
 }

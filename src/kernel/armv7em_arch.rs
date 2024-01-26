@@ -306,15 +306,24 @@ pub unsafe fn request_context_switch() {
     (*scb) |= SCB_ICSR_PENDSVSET;
 }
 
+#[inline(always)]
 pub fn interrupt_disable() {
     unsafe {
         asm!("cpsid i");
     }
 }
 
+#[inline(always)]
 pub fn interrupt_enable() {
     unsafe {
         asm!("cpsie i");
+    }
+}
+
+#[inline(always)]
+pub fn nop() {
+    unsafe {
+        asm!("nop");
     }
 }
 
@@ -381,17 +390,21 @@ pub unsafe extern "C" fn PendSV() {
         "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
         "isb",
         /* Caricamento del nuovo contesto */
-        //"bl     switch_to_next",
-        "ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
-        "str    r2, [r3, #0]",      // Save &dyn Process' data as running
+        "bl     switch_to_next",
+
+        //"ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
+        //"str    r2, [r3, #0]",      // Save &dyn Process' data as running
         //"ldr    r1, [r3, #12]",     // Get next &dyn Process' StackPointer to switch in
         //"str    r1, [r3, #4]",      // Save &dyn Process' data as running
 
         // Azzera il "next &dyn Process"
-        "mov    r1, #0",
-        "str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
-        "str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
+        //"mov    r1, #0",
+        //"str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
+        //"str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
+        
         // Carica la nuova stack
+        "ldr    r3, =SCHEDULER",    // Get &Scheduler
+        "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
         "ldr    r0, [r2]",          // Get value of StackPointer
         "ldmfd  r0!, {{r4-r11}}",   // Load Context
         "str    r0, [r2]",          // Saves new StackPointer value in &dyn Process
@@ -406,18 +419,13 @@ pub unsafe extern "C" fn PendSV() {
     );
 }
 
-/*
-NON VA, LOL! Probabilmente non salva i registri perché è già in contesto privilegiato
-e corrompe i puntamenti dell'assembly che viene dopo.
-
-/// Serve per cambiare i task con codice Rust, per maggiore sicurezza
 #[no_mangle]
 #[inline(always)]
-pub unsafe extern "C" fn switch_to_next() {
-    SCHEDULER.running = SCHEDULER.next;
-    SCHEDULER.next = None;
+unsafe extern "C" fn switch_to_next() {
+    let s = unsafe { SCHEDULER.unsafe_get() };
+    s.running = s.next;
+    s.next = None;
 }
-*/
 
 
 #[naked]

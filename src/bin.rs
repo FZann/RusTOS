@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-
 use RusTOS::kernel::processes::{Task, Process};
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::registers::Peripheral;
@@ -16,7 +14,7 @@ use RusTOS::peripherals::gpio::GPIOA;
 static CIAO: SyncCell<Task<256>> = SyncCell::new(Task::new(ciao, 0));
 static BELLO: SyncCell<Task<256>> = SyncCell::new(Task::new(bello, 1));
 static SEM: SyncCell<Semaphore> = SyncCell::new(Semaphore::new());
-//static QUEUE: SyncShare<Queue<u8, 8>> = Queue::new_syncable();
+static QUEUE: SyncCell<Queue<u8, 8>> = SyncCell::new(Queue::new());
 
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -35,12 +33,10 @@ fn ciao(task: &mut dyn Process) -> ! {
     let mut c = 0usize;
     loop {
         c += 1;
-        //QUEUE.cs(|queue| queue.push(1));
-        //sleep(500);
-        //QUEUE.cs(|queue| queue.push(0));
-        //sleep(1000);
-        SEM.with(|s, cs | s.release(cs));
-        task.sleep(c);
+        let led = c % 2;
+        //QUEUE.with(|queue, cs| queue.push(led as u8, cs));
+        SEM.with(|s, cs| s.release(cs) );
+        task.sleep(200);
         
     }
 }
@@ -53,11 +49,11 @@ fn bello(task: &mut dyn Process) -> ! {
         rcc.write(rccval | 1 << 17);        
     };
     
-        GPIOA::with(|gpioa| gpioa.set_dir(5, 1));
+        GPIOA::with(|gpioa| gpioa.set_output(5));
         let mut led_state = false;
         loop {
             /* Quinto pin per il led (PIN 5) */
-            //QUEUE.cs(|queue| led_state = queue.pop() == 1);
+            //QUEUE.with(|queue, cs| led_state = queue.pop(cs) == 1);
             led_state = !led_state;
             match led_state {
                 true => GPIOA::with(|gpioa| gpioa.set_high(5)),
@@ -66,6 +62,5 @@ fn bello(task: &mut dyn Process) -> ! {
             
             //task.sleep(200);
             SEM.with(|s, cs | s.wait(cs));
-        
     }
 }

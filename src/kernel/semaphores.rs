@@ -16,10 +16,8 @@ impl VecSemaphore {
     }
 
     pub fn wait(&mut self) {
-        unsafe {
-            //self.locked.set(SCHEDULER.running_id());
-            //SCHEDULER.running_stop();
-        }
+        //self.locked.set(SCHEDULER.running_id());
+        //SCHEDULER.running_stop();
     }
 
     pub fn release(&mut self) {

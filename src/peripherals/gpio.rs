@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 
-use crate::{kernel::registers::{RW, RO, WO}, make_peripheral};
+use crate::kernel::registers::{RW, RO, WO};
+use crate::make_peripheral;
 
 pub trait OutputType {}
 
@@ -14,12 +15,6 @@ pub struct PullUp;
 
 impl OutputType for PushPull {}
 impl OutputType for OpenDrain {}
-
-pub trait GpioPin {
-    fn set_high(&mut self);
-    fn set_low(&mut self);
-    fn set_dir(&mut self, dir: usize);
-}
 
 
 #[repr(C)]
@@ -46,8 +41,12 @@ impl GpioReg {
         unsafe { self.bsr.write(1 << (n + 16)); }
     }
 
-    pub fn set_dir(&mut self, n: usize, dir: u32) {
-        unsafe { self.mode.write(dir << (n + n)); }
+    pub fn set_input(&mut self, n: usize) {
+        unsafe { self.mode.modify(|reg| reg & !(1 << (n + n))); }
+    }
+
+    pub fn set_output(&mut self, n: usize) {
+        unsafe { self.mode.modify(|reg| reg | 1 << (n + n)); }
     }
 }
 

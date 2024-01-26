@@ -14,7 +14,7 @@ use kernel::{ExceptionFrame, HardFaultError};
 
 #[no_mangle]
 #[allow(non_snake_case)]
-extern "C" fn OSFault(_error: HardFaultError ,_frame: &ExceptionFrame) -> ! {
+extern "C" fn OSFault(_error: HardFaultError, _frame: &ExceptionFrame) -> ! {
     loop {}
 }
 

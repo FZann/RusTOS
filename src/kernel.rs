@@ -56,6 +56,10 @@ impl BitVec {
         self.vec &= !(1 << bit);
     }
 
+    pub fn reset(&mut self) {
+        self.vec = 0;
+    }
+
     /// La funzione riporta un risultato 0-indexed, cioè ritorna 0
     /// se il primissimo bit è settato; in questo modo possiamo usare
     /// il valore per indirizzare gli array senza sottrazioni.
