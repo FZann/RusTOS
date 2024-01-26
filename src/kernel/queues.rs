@@ -1,34 +1,32 @@
-use crate::kernel::semaphores::Semaphore;
-
-use super::CriticalSection;
+use super::semaphores::VecSemaphore;
 
 
 /// Coda. L'implementazione sul passaggio dei dati by-value (copia)
 /// e non by-ref (puntatore/riferimento).
-pub struct Queue<'p, T, const SIZE: usize> {
-    sem: Semaphore<'p>,
+pub struct Queue<T, const SIZE: usize> {
+    sem: VecSemaphore,
     buf: [Option<T>; SIZE],
     head: usize,
     tail: usize,
 }
 
-impl<'p, T, const SIZE: usize> Queue<'p, T, SIZE>
+impl<T, const SIZE: usize> Queue<T, SIZE>
 where
     T: Sized + Copy,
 {
     pub const fn new() -> Self {
         Self {
-            sem: Semaphore::new(),
+            sem: VecSemaphore::new(),
             buf: [None; SIZE],
             head: 0,
             tail: 0,
         }
     }
 
-    pub fn push(&mut self, object: T, cs: &CriticalSection) {
+    pub fn push(&mut self, object: T) {
         // Andiamo in attesa col semaforo, perché la coda è piena
         while self.buf[self.head].is_some() {
-            self.sem.wait(cs);
+            self.sem.wait();
         }
 
         self.buf[self.head] = Some(object);
@@ -36,13 +34,13 @@ where
         if self.head >= SIZE {
             self.head = 0;
         }
-        self.sem.release(cs); // Segnalazione per eventuali pop in attesa
+        self.sem.release(); // Segnalazione per eventuali pop in attesa
     }
 
-    pub fn pop(&mut self, cs: &CriticalSection) -> T {
+    pub fn pop(&mut self) -> T {
         // Andiamo in attesa col semaforo, perché la coda è vuota
         if self.buf[self.tail].is_none() {
-            self.sem.wait(cs);
+            self.sem.wait();
         }
 
         // Unwrap non panica sicuramente, abbiamo fatto il test prima!
@@ -52,7 +50,7 @@ where
             self.tail = 0;
         }
         
-        self.sem.release(cs); // Segnalazione per eventuali push in attesa
+        self.sem.release(); // Segnalazione per eventuali push in attesa
 
         result
     }

@@ -195,7 +195,7 @@ impl NVICRegs {
 
     pub fn set_interrupt_prio(&mut self, int: Interrupts, prio: IntPrio) {
         let n = (int.number() >> 2) as usize; // Divide per 4
-        self.ipr[n] = prio.value() << 8 * n;
+        self.ipr[n] = prio.value() << (8 * n);
     }
 
 }
@@ -389,7 +389,9 @@ pub unsafe extern "C" fn PendSV() {
         "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
         "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
         "isb",
+
         /* Caricamento del nuovo contesto */
+        // switch_to_next sta funzionando!!!!! Faccio il cambio con Rust!
         "bl     switch_to_next",
 
         //"ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
