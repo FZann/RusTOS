@@ -8,7 +8,7 @@ use super::{CriticalSection, SyncCell};
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
 //pub static SCHEDULER: Preemptive = Preemptive::new();
 pub static SCHEDULER: SyncCell<Preemptive> = SyncCell::new(Preemptive::new());
-pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
+pub static mut IDLE_TASK: Task<32> = Task::new(super::idle_task, 200);
 
 pub trait Scheduler<'p> {
     fn start(&mut self) -> !;

@@ -271,9 +271,6 @@ static __ARM_VECTORS: [Vector; 15] = [
     Vector { handler: SysTick },
 ];
 
-#[no_mangle]
-#[link_section = ".vector_table_interrupts"]
-static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
 
 #[no_mangle]
 pub extern "C" fn NonMaskableInt() {}
@@ -299,6 +296,10 @@ pub extern "C" fn SysTick() {
     SCHEDULER.get(&cs).inc_system_ticks();
     SCHEDULER.get(&cs).schedule_next();
 }
+
+#[no_mangle]
+#[link_section = ".vector_table_interrupts"]
+static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
 
 pub unsafe fn request_context_switch() {
     let scb: *mut usize = 0xE000_ED04 as *mut usize;
@@ -332,7 +333,6 @@ pub fn nop() {
 #[no_mangle]
 #[link_section = ".os_entry"]
 pub unsafe extern "C" fn __ENTRY() {
-
     asm!(
         /* Copy the data segment initializers from flash to SRAM */
         "ldr    r0, =ld_data_start",
@@ -370,15 +370,43 @@ pub unsafe extern "C" fn __ENTRY() {
 
 #[naked]
 #[no_mangle]
+#[link_section = ".os_errorhandler"]
+pub unsafe extern "C" fn HardFaultTrampoline() {
+    asm!(
+        // Ottiene la &Process running
+        "ldr    r3, =SCHEDULER",
+        "ldr    r2, [r3, #0]",
+        "ldr    r3, [r3, #4]",
+
+        // Test se siamo in contesto privilegiato o in thread
+        "mov    r0, lr",
+        "mov    r1, #4",
+        "tst    r0, r1",
+        
+        // Branch per il contesto
+        "bne    0f",
+        "mrs    r0, MSP",
+        "mov    r1, #2",
+        "b      OSFault",
+        "0:",
+        "mrs    r0, PSP",
+        "mov    r1, #1",
+        "b      OSFault",
+        options(noreturn)
+    );
+}
+
+#[naked]
+#[no_mangle]
 pub unsafe extern "C" fn PendSV() {
     asm!(
         // Il layout in memoria di &dyn Process è:
         // [RAM data : *usize; vtable : *usize]
-        // Sono due puntatori. A noi serve il primo puntatore verso la memoria RAM
-        // Nel codice seguente effettueremo questo puntamento per cambiare contesto
+        // Sono due puntatori, non uno solo. Tenere a mente questo.
 
         // R3: &Scheduler
-        // R2: &dyn Process, running or next
+        // R2: &dyn Process
+        // R1: Start Stack Pointer/Watermark
         // R0: value of StackPointers
 
         /* Salvataggio del contesto attuale */
@@ -386,23 +414,20 @@ pub unsafe extern "C" fn PendSV() {
         "mrs    r0, psp",           // Take PSP value out to r0
         "stmfd  r0!, {{r4-r11}}",   // Save Context
         "ldr    r3, =SCHEDULER",    // Get &Scheduler
-        "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
-        "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
+        "ldr    r2, [r3, #0]",      // Get running &dyn Process to switch out
+        "str	r0, [r2]",          // Save PSP value in &StackPointer (same as &dyn Process)
+        // Calcola il watermark
+        "ldr    r1, [r2, #4]",      // &Start Stack Pointer (ref)
+        "sub    r1, r1, r0",        // Ottiene il numero di bytes nella stack (r1 = SP Start - SP attuale)
+        "lsr    r1, r1, #2",        // Divide per 4 e ottiene il numero di parole (Watermark)
+        "ldr    r0, [r2, #8]",      // Ottiene il vecchio Watermark
+        "cmp    r0, r1",            // Old Water > New Water??
+        "it     lt",                // Abilita le istruzioni condizionali per "minore di"
+        "strlt  r1, [r2, #8]",      // Salva il valore nel WaterMark solo se il vecchio è minore del nuovo
         "isb",
 
         /* Caricamento del nuovo contesto */
-        // switch_to_next sta funzionando!!!!! Faccio il cambio con Rust!
         "bl     switch_to_next",
-
-        //"ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
-        //"str    r2, [r3, #0]",      // Save &dyn Process' data as running
-        //"ldr    r1, [r3, #12]",     // Get next &dyn Process' StackPointer to switch in
-        //"str    r1, [r3, #4]",      // Save &dyn Process' data as running
-
-        // Azzera il "next &dyn Process"
-        //"mov    r1, #0",
-        //"str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
-        //"str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
         
         // Carica la nuova stack
         "ldr    r3, =SCHEDULER",    // Get &Scheduler
@@ -476,25 +501,7 @@ pub fn svc(sys_call: SysCallType) {
     }
 }
 
-#[naked]
-#[no_mangle]
-#[link_section = ".os_errorhandler"]
-pub unsafe extern "C" fn HardFaultTrampoline() {
-    asm!(
-        "mov    r0, lr",
-        "mov    r1, #4",
-        "tst    r0, r1",
-        "bne    0f",
-        "mov    r0, #2",
-        "mrs    r1, MSP",
-        "b      OSFault",
-        "0:",
-        "mov    r0, #1",
-        "mrs    r1, PSP",
-        "b      OSFault",
-        options(noreturn)
-    );
-}
+
 
 
 
@@ -526,4 +533,3 @@ pub extern "C" fn SVCall() {
         SysCallType::ProcessSleep(prio, ticks) => s.process_sleep(prio, ticks),
     };
 }
-

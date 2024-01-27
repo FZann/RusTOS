@@ -1,11 +1,11 @@
-use core::{cell::Cell, mem::MaybeUninit};
+use core::cell::Cell;
 
 use crate::kernel::Ticks;
 
 use super::{SysCallType, SystemCall};
 
 pub type TaskHandle = fn(&mut dyn Process) -> !;
-type StackPointer = MaybeUninit<usize>;
+type StackPointer = usize;
 
 pub trait Process {
     fn setup(&mut self);
@@ -34,7 +34,14 @@ pub struct Task<const WORDS: usize> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
     sp: StackPointer,
+    
+    /// Stack pointer iniziale. Serve per far ripartire il task in caso di errori
+    sp_start: StackPointer,   
+
+    /// Massimo riempimento della stack, rappresentato in numero di parole (sp_start - sp)
+    sp_watermark: StackPointer,  
     /* !!! --------------------- !!! */
+
     stack: [usize; WORDS],
     task: TaskHandle,
     prio: usize,
@@ -43,12 +50,14 @@ pub struct Task<const WORDS: usize> {
 
 impl<const WORDS: usize> Task<WORDS> {
     pub const fn new(task: TaskHandle, prio: usize) -> Self {
-        if WORDS <= 32 {
+        if WORDS < 32 {
             panic!("Stack troppo piccola!");
         };
 
         Self {
-            sp: MaybeUninit::uninit(),
+            sp: 0,
+            sp_start: 0,
+            sp_watermark: 0,
             stack: [0; WORDS],
             task,
             prio,
@@ -81,9 +90,10 @@ impl<const WORDS: usize> Process for Task<WORDS> {
         self.stack[WORDS - 15] = 0x5; // R5
         self.stack[WORDS - 16] = 0x4; // R4
 
-        // Impostazione dello stack pointer
-        let sp = &self.stack[WORDS - 16] as *const usize as usize;
-        self.sp.write(sp);
+        // Impostazione dello stack pointer, della stack iniziale e del watermark
+        self.sp = &self.stack[WORDS - 16] as *const usize as usize;
+        self.sp_start = &self.stack[WORDS - 01] as *const usize as usize;
+        self.sp_watermark = 0;
     }
 
     #[inline(always)]

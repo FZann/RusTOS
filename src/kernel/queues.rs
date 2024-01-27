@@ -1,10 +1,10 @@
-use super::semaphores::VecSemaphore;
+use super::semaphores::Semaphore;
 
 
 /// Coda. L'implementazione sul passaggio dei dati by-value (copia)
 /// e non by-ref (puntatore/riferimento).
 pub struct Queue<T, const SIZE: usize> {
-    sem: VecSemaphore,
+    sem: Semaphore,
     buf: [Option<T>; SIZE],
     head: usize,
     tail: usize,
@@ -16,7 +16,7 @@ where
 {
     pub const fn new() -> Self {
         Self {
-            sem: VecSemaphore::new(),
+            sem: Semaphore::new(),
             buf: [None; SIZE],
             head: 0,
             tail: 0,

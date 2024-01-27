@@ -1,4 +1,4 @@
-use core::cell::Cell;
+use core::cell::{Cell, UnsafeCell};
 
 use crate::kernel::processes::Process;
 use crate::kernel::scheduler::{SCHEDULER, Scheduler};
@@ -6,11 +6,11 @@ use crate::kernel::BitVec;
 
 use super::{SysCallType, SystemCall, CriticalSection};
 
-pub struct VecSemaphore {
+pub struct Semaphore {
     locked: Cell<BitVec>,
 }
 
-impl VecSemaphore {
+impl Semaphore {
     pub const fn new() -> Self {
         Self {
             locked: Cell::new(BitVec::new()),
@@ -38,36 +38,53 @@ impl VecSemaphore {
             SystemCall(SysCallType::ProcessIdle(id));
         }
     }
-}
 
-
-pub struct Semaphore<'p> {
-    locked: Option<&'p dyn Process>,
-}
-
-/* Le SysCalls non vanno... motivi sconosciuti. Indagare */
-impl<'p> Semaphore<'p> {
-    pub const fn new() -> Self {
-        Self { locked: None }
+    /// Serve????
+    pub(crate) fn lock_id(&self, id: usize) {
+        let cs = CriticalSection::activate();
+        let mut locked = self.locked.get();
+        locked.set(id);
+        self.locked.set(locked);
+        cs.deactivate();
+        SystemCall(SysCallType::ProcessStop(id));
     }
 
-    pub fn wait(&mut self, _cs: &CriticalSection) {
-        let cs = CriticalSection::activate();
-        if self.locked.is_some() {
-            return;
+}
+
+pub struct Mutex<'p, T> {
+    locker: Option<&'p dyn Process>,
+    resource: UnsafeCell<T>,
+    sem: Semaphore,
+}
+
+impl<'p, T> Mutex<'p, T> {
+    pub const fn new(value: T) -> Self {
+        Self { 
+            locker: None,
+            resource: UnsafeCell::new(value),
+            sem: Semaphore::new(),
         }
-        self.locked = SCHEDULER.get(&cs).running;
-        SCHEDULER.get(&cs).running_stop();
-        //SystemCall(SysCallType::ProcessStop(self.locked.unwrap().prio()));
     }
 
-    pub fn release(&mut self, _cs: &CriticalSection) {
+    pub fn acquire(&mut self) -> Result<&mut T, ()> {
         let cs = CriticalSection::activate();
-        if let Some(locked) = self.locked {
-            let prio = locked.prio();
-            self.locked = None;
-            SCHEDULER.get(&cs).process_idle(prio);
-            //SystemCall(SysCallType::ProcessIdle(prio));
+        if self.locker.is_some() {
+            self.sem.wait();
         }
+
+        self.locker = SCHEDULER.get(&cs).running;
+        unsafe { Ok(&mut *self.resource.get()) }
+    }
+
+    pub fn release(&mut self, _cs: &CriticalSection) -> Result<(), ()> {
+        let cs = CriticalSection::activate();
+        if let Some(locked) = self.locker {
+            if locked.prio() == SCHEDULER.get(&cs).running_id() {
+                self.locker = None;
+                self.sem.release();
+                return Ok(());
+            }
+        }
+        Err(())
     }
 }

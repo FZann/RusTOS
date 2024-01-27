@@ -10,11 +10,14 @@ pub mod peripherals;
 use core::panic::PanicInfo;
 
 use kernel::{ExceptionFrame, HardFaultError};
+use kernel::processes::Process;
 
 
 #[no_mangle]
 #[allow(non_snake_case)]
-extern "C" fn OSFault(_error: HardFaultError, _frame: &ExceptionFrame) -> ! {
+fn OSFault(_frame: &ExceptionFrame, error: HardFaultError, running: &dyn Process) -> ! {
+    running.set_ticks(5);
+
     loop {}
 }
 

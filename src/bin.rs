@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+use core::arch::asm;
+
 use RusTOS::kernel::processes::{Task, Process};
 use RusTOS::kernel::queues::Queue;
 use RusTOS::kernel::registers::Peripheral;
@@ -11,8 +13,8 @@ use RusTOS::kernel::SyncCell;
 
 use RusTOS::peripherals::gpio::GPIOA;
 
-static CIAO: SyncCell<Task<256>> = SyncCell::new(Task::new(ciao, 0));
-static BELLO: SyncCell<Task<256>> = SyncCell::new(Task::new(bello, 1));
+static CIAO: SyncCell<Task<128>> = SyncCell::new(Task::new(ciao, 0));
+static BELLO: SyncCell<Task<128>> = SyncCell::new(Task::new(bello, 1));
 static SEM: SyncCell<Semaphore> = SyncCell::new(Semaphore::new());
 static QUEUE: SyncCell<Queue<u8, 8>> = SyncCell::new(Queue::new());
 
@@ -49,6 +51,8 @@ fn bello(task: &mut dyn Process) -> ! {
         rcc.write(rccval | 1 << 17);        
     };
     
+
+
     GPIOA::with(|gpioa| gpioa.set_output(5));
     let mut led_state = false;
     loop {
