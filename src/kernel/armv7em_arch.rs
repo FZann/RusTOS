@@ -9,7 +9,7 @@ use crate::kernel::CriticalSection;
 use crate::make_peripheral;
 
 use super::processes::Process;
-use super::registers::Peripheral;
+use crate::peripherals::Peripheral;
 
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
@@ -78,14 +78,14 @@ pub enum ClockSource {
 
 /// Struttura dati effettiva sottostante allo ZST di accesso
 #[repr(C)]
-pub struct SysTickRegs {
+pub struct SysTickTimer {
     crs: u32,
     rvr: u32,
     cvr: u32,
     calib: u32,
 }
 
-impl SysTickRegs {
+impl SysTickTimer {
     const ENABLE: u32 = 1;
     const TICKINT: u32 = 1 << 1;
     const CLKSOURCE: u32 = 1 << 2;
@@ -138,7 +138,7 @@ impl SysTickRegs {
 
 /// Struttura dati effettiva sottostante allo ZST di accesso
 #[repr(C)]
-pub struct NVICRegs {
+pub struct NVIC {
     iser: [usize; 8],
     void1: [usize; 24],
     icer: [usize; 8],
@@ -151,7 +151,7 @@ pub struct NVICRegs {
     stir: usize,
 }
 
-impl NVICRegs {
+impl NVIC {
     pub fn enable_interrupt(&mut self, int: Interrupts) {
         let n = int.number();
         match n {
@@ -200,8 +200,9 @@ impl NVICRegs {
 
 }
 
-make_peripheral!(SysTickTimer: 0xE000_E010, SysTickRegs);
-make_peripheral!(NVIC: 0xE000_E100, NVICRegs);
+
+crate::make_peripheral!(SysTickTimer: 0xE000_E010);
+crate::make_peripheral!(NVIC: 0xE000_E100);
 
 
 #[doc(hidden)]
@@ -391,7 +392,12 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
         "0:",
         "mrs    r0, PSP",
         "mov    r1, #1",
-        "b      OSFault",
+
+        // Gestione dell'errore da parte di Rust
+        "bl     OSFault",
+
+        // Switch al prossimo task schedulabile
+        "b      load_first_process",
         options(noreturn)
     );
 }
@@ -486,8 +492,9 @@ pub(crate) fn idle_task(_task: &mut dyn Process) -> ! {
     }
 }
 
+#[allow(non_snake_case)]
 #[inline(always)]
-pub fn svc(sys_call: SysCallType) {
+pub fn SystemCall(sys_call: SysCallType) {
     unsafe {
         SCHEDULER.unsafe_get().sys_call = sys_call;
 
@@ -500,9 +507,6 @@ pub fn svc(sys_call: SysCallType) {
         }
     }
 }
-
-
-
 
 
 /// Un accesso safe qui non serve, perché siamo al massimo possibile della priorità

@@ -2,7 +2,6 @@ pub mod processes;
 pub mod queues;
 pub mod scheduler;
 pub mod semaphores;
-pub mod registers;
 
 mod armv7em_arch;
 
@@ -11,7 +10,7 @@ use core::cell::UnsafeCell;
 // Aliasing per poter usare la compilazione condizionale
 pub(crate) use self::armv7em_arch::idle_task;
 pub use self::armv7em_arch::load_first_process;
-pub use self::armv7em_arch::svc as SystemCall;
+pub use self::armv7em_arch::SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
 pub use self::armv7em_arch::request_context_switch;
 use self::armv7em_arch::{interrupt_disable, interrupt_enable};
@@ -29,6 +28,7 @@ pub enum SysCallType {
 }
 
 #[repr(C)]
+#[derive(PartialEq, Eq)]
 pub enum HardFaultError {
     FromProcess = 1,
     FromPrivileged = 2,

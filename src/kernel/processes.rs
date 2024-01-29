@@ -127,6 +127,7 @@ impl<const WORDS: usize> Process for Task<WORDS> {
     fn idle(&mut self) {
         SystemCall(SysCallType::ProcessIdle(self.prio));
     }
+    
 
     fn stop(&mut self) {
         SystemCall(SysCallType::ProcessStop(self.prio));

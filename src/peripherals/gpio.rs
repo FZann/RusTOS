@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
-use crate::kernel::registers::{RW, RO, WO};
-use crate::make_peripheral;
+use volatile_register::{RW, RO, WO};
+use crate::make_peripherals;
 
 pub trait OutputType {}
 
@@ -50,8 +50,8 @@ impl GpioReg {
     }
 }
 
-make_peripheral!(GPIOA: 0x4800_0000, GpioReg);
-make_peripheral!(GPIOB: 0x4800_0400, GpioReg);
-make_peripheral!(GPIOC: 0x4800_0800, GpioReg);
-make_peripheral!(GPIOD: 0x4800_0C00, GpioReg);
+make_peripherals!(GPIOA: 0x4800_0000, GpioReg);
+make_peripherals!(GPIOB: 0x4800_0400, GpioReg);
+make_peripherals!(GPIOC: 0x4800_0800, GpioReg);
+make_peripherals!(GPIOD: 0x4800_0C00, GpioReg);
 

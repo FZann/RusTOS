@@ -5,7 +5,7 @@ use core::arch::asm;
 
 use RusTOS::kernel::processes::{Task, Process};
 use RusTOS::kernel::queues::Queue;
-use RusTOS::kernel::registers::Peripheral;
+use RusTOS::peripherals::Peripheral;
 use RusTOS::kernel::scheduler::Scheduler;
 use RusTOS::kernel::semaphores::Semaphore;
 use RusTOS::kernel::{CriticalSection, SysCallType, SystemCall};
@@ -39,7 +39,6 @@ fn ciao(task: &mut dyn Process) -> ! {
         QUEUE.with(|queue, _| queue.push(led as u8));
         //SEM.with(|s, cs| s.release(cs) );
         task.sleep(200);
-        
     }
 }
 
@@ -48,10 +47,8 @@ fn bello(task: &mut dyn Process) -> ! {
         let mut rcc: *mut usize = 0x4002_1000 as *mut usize;
         rcc = rcc.add(5);
         let rccval = rcc.read();
-        rcc.write(rccval | 1 << 17);        
+        rcc.write(rccval | 1 << 17);  
     };
-    
-
 
     GPIOA::with(|gpioa| gpioa.set_output(5));
     let mut led_state = false;
