@@ -1,16 +1,9 @@
 use core::arch::asm;
 
-
 use crate::kernel::SysCallType;
 use crate::kernel::scheduler::{Scheduler, SCHEDULER};
-
-
 use crate::kernel::CriticalSection;
-use crate::make_peripheral;
-
-use super::processes::Process;
 use crate::peripherals::Peripheral;
-
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
 
@@ -484,7 +477,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
     );
 }
 
-pub(crate) fn idle_task(_task: &mut dyn Process) -> ! {
+pub(crate) fn idle_task(_task: &mut dyn crate::kernel::processes::Process) -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -526,6 +519,8 @@ pub extern "C" fn SVCall() {
             nvic.set_interrupt_prio(Interrupts::SysTick, IntPrio::Pri01);
             nvic.set_interrupt_prio(Interrupts::PendSV, IntPrio::Min);
 
+
+            
             let systick = unsafe { SysTickTimer::regs() };
             systick.init();
 

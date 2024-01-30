@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-
 use RusTOS::kernel::processes::{Task, Process};
 use RusTOS::kernel::queues::Queue;
 use RusTOS::peripherals::Peripheral;
@@ -35,10 +33,16 @@ fn ciao(task: &mut dyn Process) -> ! {
     let mut c = 0usize;
     loop {
         c += 1;
-        let led = c % 2;
-        QUEUE.with(|queue, _| queue.push(led as u8));
-        //SEM.with(|s, cs| s.release(cs) );
-        task.sleep(200);
+        //let led = c % 2;
+        //QUEUE.with(|queue, _| queue.push(led as u8));
+        SEM.with(|s, _| s.release() );
+        task.sleep(60);
+
+        unsafe { core::arch::asm!(
+            "ldr    r3, =SCHEDULER",
+            "ldr    r2, [r3, #4]",
+            "str    r0, [r2, #0]",
+        );}
     }
 }
 
@@ -54,9 +58,9 @@ fn bello(task: &mut dyn Process) -> ! {
     let mut led_state = false;
     loop {
         //task.sleep(200);
-        //SEM.with(|s, cs | s.wait(cs));
-        QUEUE.with(|queue, _| led_state = queue.pop() == 1);
-        //led_state = !led_state;
+        SEM.with(|s, _ | s.wait());
+        //QUEUE.with(|queue, _| led_state = queue.pop() == 1);
+        led_state = !led_state;
         match led_state {
             true => GPIOA::with(|gpioa| gpioa.set_high(5)),
             false => GPIOA::with(|gpioa| gpioa.set_low(5)),
