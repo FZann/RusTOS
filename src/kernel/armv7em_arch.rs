@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 use crate::kernel::{Syncable, SysCallType};
-use crate::kernel::scheduler::{Scheduler, SCHEDULER};
+use crate::kernel::tasks::KERNEL;
 
 use cortex_m::interrupt::*;
 use cortex_m::peripheral::{self, Peripherals};
@@ -130,8 +130,8 @@ pub extern "C" fn SecureFault() {}
 #[no_mangle]
 pub extern "C" fn SysTick() {
     unsafe {
-        SCHEDULER.inc_system_ticks();
-        SCHEDULER.schedule_next();
+        KERNEL.inc_system_ticks();
+        KERNEL.schedule_next();
     }
 }
 
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn PendSV() {
         "cpsid	i",
         "mrs    r0, psp",           // Take PSP value out to r0
         "stmfd  r0!, {{r4-r11}}",   // Save Context
-        "ldr    r3, =SCHEDULER",    // Get &Scheduler
+        "ldr    r3, =KERNEL",       // Get &Scheduler
         "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
         "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
         "isb",
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn load_first_process() -> ! {
         // R2: &PCB, running or next
         // R0: value of StackPointers, running or next
         /* Caricamento del nuovo contesto */
-        "ldr    r3, =SCHEDULER",  // Get &Scheduler
+        "ldr    r3, =KERNEL",     // Get &Scheduler
         "ldr    r2, [r3, #0]",    // Get &PCB's StackPointer to run
         "ldr    r0, [r2]",        // Get value of StackPointer
         "ldmfd  r0!, {{r4-r11}}", // Load Context
@@ -265,7 +265,7 @@ pub(crate) fn idle_task() -> ! {
 #[inline(always)]
 pub fn svc(sys_call: SysCallType) {
     unsafe {
-        SCHEDULER.sys_call = sys_call;
+        KERNEL.sys_call = sys_call;
     }
     unsafe {
         match sys_call {
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 pub extern "C" fn SVCall() {
     unsafe {
 
-        match SCHEDULER.sys_call {
+        match KERNEL.sys_call {
             SysCallType::Nop => (),
             SysCallType::StartScheduler => {
                 let mut p = Peripherals::take().unwrap();
@@ -319,12 +319,12 @@ pub extern "C" fn SVCall() {
                 nvic.set_priority(Interrupts::SysTick, 1);
                 nvic.set_priority(Interrupts::PendSV, 255);
 
-                SCHEDULER.start();
+                KERNEL.start();
             }
 
-            SysCallType::ProcessIdle => SCHEDULER.running_idle(),
-            SysCallType::ProcessStop => SCHEDULER.running_stop(),
-            SysCallType::ProcessSleep(ticks) => SCHEDULER.running_sleep(ticks),
+            SysCallType::ProcessIdle => KERNEL.running_idle(),
+            SysCallType::ProcessStop => KERNEL.running_stop(),
+            SysCallType::ProcessSleep(ticks) => KERNEL.running_sleep(ticks),
         };
     }
 }
