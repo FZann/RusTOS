@@ -1,15 +1,22 @@
-use core::{cell::Cell, mem::transmute};
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
+use core::cell::Cell;
 
 use crate::bitvec::BitVec;
-use crate::kernel::{SysCallType, Ticks};
-use crate::kernel::Syncable;
+use crate::kernel::{SysCallType, Ticks, CorePeripherals};
+
+use crate::kernel::CritCell;
+
+use super::{CritSect, SystemCall};
 
 
 #[no_mangle]
 //pub static mut SCHEDULER: Mutex<Preemptive> = Mutex::new(Preemptive::new());
-pub static mut KERNEL: Kernel = Kernel::new();
+pub static KERNEL: CritCell<Kernel> = CritCell::new(Kernel::new());
 //pub static mut SCHEDULER: Preemptive = Preemptive::new();
-pub static mut IDLE_TASK: Task<40> = Task::new(super::idle_task, 200);
+pub static mut IDLE_TASK: Task<32> = Task::new(super::idle_task, 200);
+
+pub type TaskHandle = fn(&mut dyn Process) -> !;
 
 /// Lo Scheduler tiene in memoria anche le variabili che servono per completare
 /// un context switch. In questo modo evito di usare una serie di unsafe per
@@ -24,75 +31,66 @@ pub struct Kernel<'p> {
     pub(crate) next: Option<&'p dyn Process>,
     /* !!! --------------------- !!! */
     pub(crate) sys_call: SysCallType,
-    processes: [Option<&'p dyn Process>; 32],
-    schedulable: BitVec,
+
+    /// Periferiche del core
+    core: CorePeripherals,  
+
+    /// Lista processi
+    processes: [Option<&'p dyn Process>; BitVec::BITS],
+    ready: BitVec,
     sleeping: BitVec,
 }
-
-unsafe impl<'p> Sync for Kernel<'p> {}
-impl<'p> Syncable for Kernel<'p> {}
 
 impl<'p> Kernel<'p> {
     pub const fn new() -> Self {
         Self {
-            sys_call: SysCallType::Nop,
-            processes: [None; 32],
-            schedulable: BitVec::new(),
-            sleeping: BitVec::new(),
             running: None,
             next: None,
+            sys_call: SysCallType::Nop,
+            core: CorePeripherals::new(),
+            processes: [None; BitVec::BITS],
+            ready: BitVec::new(),
+            sleeping: BitVec::new(),
         }
     }
 
-    pub fn start(&mut self) -> ! {
-        /* Scheduling first process */
-        self.running = match self.schedulable.find_first_set() {
-            Ok(id) => self.processes[id],
-            Err(_) => unsafe { Some(&IDLE_TASK) },
-        };
+    pub fn init(&self, cs: CritSect) -> ! {
+        drop(cs);
+        SystemCall(SysCallType::StartScheduler);
+        unreachable!();
+    }
 
+    pub(crate) fn start(&mut self) -> ! {
+        // Setup delle periferiche core per far girare l'OS
+        self.core.setup_os();
+        
+        /* Scheduling first process */
         unsafe {
+            self.running = Some(&IDLE_TASK);
             IDLE_TASK.setup();
-            crate::kernel::load_first_process();
+            self.load_first_process();
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
     }
-
-    fn running_id(&self) -> usize {
-        self.running.unwrap().prio()
-    }
-
-    pub(crate) fn running_idle(&mut self) {
-        self.process_idle(self.running_id());
-    }
-
-    pub(crate) fn running_stop(&mut self) {
-        self.process_stop(self.running_id());
-    }
-
-    pub(crate) fn running_sleep(&mut self, ticks: Ticks) {
-        self.process_sleep(self.running_id(), ticks);
+    fn running(&self) -> &dyn Process {
+        self.running.unwrap()
     }
 
     pub(crate) fn process_idle(&mut self, prio: usize) {
-        if self.processes[prio].is_some() {
-            self.schedulable.set(prio);
-            self.sleeping.clear(prio);
-            self.schedule_next();
-        }
+        self.ready.set(prio);
+        self.sleeping.clear(prio);
+        self.schedule_next();
     }
 
     pub(crate) fn process_stop(&mut self, prio: usize) {
-        if self.processes[prio].is_some() {
-            self.schedulable.clear(prio);
-            self.sleeping.clear(prio);
-            self.schedule_next();
-        }
+        self.ready.clear(prio);
+        self.sleeping.clear(prio);
+        self.schedule_next();
     }
 
     pub(crate) fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
         if let Some(pcb) = self.processes[prio] {
-            self.schedulable.clear(prio);
+            self.ready.clear(prio);
             self.sleeping.set(prio);
             pcb.set_ticks(ticks);
             self.schedule_next();
@@ -106,7 +104,7 @@ impl<'p> Kernel<'p> {
         for id in self.sleeping.into_iter() {
             let task = self.processes[id].unwrap();
             if task.decrement_ticks() == 0 {
-                self.schedulable.set(id);
+                self.ready.set(id);
                 self.sleeping.clear(id);
             }
         }
@@ -117,16 +115,16 @@ impl<'p> Kernel<'p> {
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     pub(crate) fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
-        match (self.running_id(), self.schedulable.find_first_set()) {
+        match (self.running().prio(), self.ready.find_first_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                cortex_m::peripheral::SCB::set_pendsv();
+                self.request_context_switch();
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
                 self.next = unsafe { Some(&IDLE_TASK) };
-                cortex_m::peripheral::SCB::set_pendsv();
+                self.request_context_switch();
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla
@@ -140,7 +138,7 @@ impl<'p> Kernel<'p> {
         if let None = self.processes[prio] {
             process.setup();
             self.processes[prio] = Some(process);
-            self.schedulable.set(prio);
+            self.ready.set(prio);
             Ok(())
         } else {
             Err(())
@@ -149,56 +147,70 @@ impl<'p> Kernel<'p> {
 
     pub fn remove_process(&mut self, prio: usize) -> Result<(), ()> {
         self.processes[prio].take();
-        self.schedulable.clear(prio);
+        self.ready.clear(prio);
         self.sleeping.clear(prio);
         Ok(())
     }
 }
 
 
-pub type TaskHandle = fn() -> !;
-type StackPointer<'sp> = Option<&'sp usize>;
-
 pub trait Process {
     fn setup(&mut self);
+    fn set_ticks(&self, ticks: Ticks);
+    fn decrement_ticks(&self) -> Ticks;
+
     fn prio(&self) -> usize;
     fn sp(&self) -> StackPointer;
     fn handle(&self) -> TaskHandle;
-
-    fn set_ticks(&self, ticks: Ticks);
-    fn decrement_ticks(&self) -> Ticks;
 
     fn idle(&mut self);
     fn stop(&mut self);
     fn sleep(&mut self, ticks: Ticks);
 }
 
+#[derive(Clone)]
+#[repr(C)]
+pub struct StackPointer<'sp> {
+    lifetime: PhantomData<&'sp usize>,
+    ptr: Option<NonZeroUsize>,
+    start: Option<NonZeroUsize>,
+    watermark: Option<NonZeroUsize>,
+}
+
+impl<'sp> StackPointer<'sp> {
+    pub const fn new() -> Self {
+        Self {
+            lifetime: PhantomData,
+            ptr: None,
+            start: None,
+            watermark: None,
+        }
+    }
+}
+
 /// **PCB**
 ///
 /// Process Control Block per un dispositivo ARM Cortex-M4.
 #[repr(C)]
-pub struct Task<'task, const WORDS: usize> {
+pub struct Task<'t, const WORDS: usize> {
     /* !!! --------------------- !!! */
     // L'accesso a queste variabili avviene anche via assembly! Non modificare la dichiarazione!
-    sp: StackPointer<'task>,
+    sp: StackPointer<'t>,
     /* !!! --------------------- !!! */
     stack: [usize; WORDS],
     task: TaskHandle,
     ticks: Cell<Ticks>,
-    prio: u8,
+    prio: usize,
 }
 
-unsafe impl<'task, const WORDS: usize> Sync for Task<'task, WORDS> {}
-impl<'task, const WORDS: usize> Syncable for Task<'task, WORDS> {}
-
-impl<'task, const WORDS: usize> Task<'task, WORDS> {
-    pub const fn new(task: TaskHandle, prio: u8) -> Self {
-        if WORDS <= 32 {
+impl<'t, const WORDS: usize> Task<'t, WORDS> {
+    pub const fn new(task: TaskHandle, prio: usize) -> Self {
+        if WORDS < 32 {
             panic!("Stack troppo piccola!");
         };
 
         Self {
-            sp: None,
+            sp: StackPointer::new(),
             stack: [0; WORDS],
             task,
             prio,
@@ -207,15 +219,18 @@ impl<'task, const WORDS: usize> Task<'task, WORDS> {
     }
 }
 
-impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
+impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
     fn setup(&mut self) {
+        let pointer: [usize; 2] = unsafe { core::mem::transmute(self as &dyn Process) };
+
         self.stack[WORDS - 01] = 1 << 24; // xPSR - Thumb state attivo
         self.stack[WORDS - 02] = self.task as usize; // PC
         self.stack[WORDS - 03] = 0xFFFFFFFD; // LR
         self.stack[WORDS - 04] = 0xC; // R12
         self.stack[WORDS - 05] = 0x3; // R3
         self.stack[WORDS - 06] = 0x2; // R2
-        self.stack[WORDS - 07] = 0x1; // R1
+        self.stack[WORDS - 07] = pointer[1]; // R1
+        self.stack[WORDS - 08] = pointer[0]; // R0
 
         // Software stack; non è strettamente necessaria, serve più per debug
         self.stack[WORDS - 09] = 0xB; // R11
@@ -227,11 +242,13 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
         self.stack[WORDS - 15] = 0x5; // R5
         self.stack[WORDS - 16] = 0x4; // R4
 
-        let sp = &self.stack[WORDS - 16];
-        unsafe {
-            self.sp = Some(transmute(sp));
-        }
+        let sp = &self.stack[WORDS - 16] as *const usize as usize;
+        let start = &self.stack[WORDS - 01] as *const usize as usize;
+        self.sp.ptr = NonZeroUsize::new(sp);
+        self.sp.start = NonZeroUsize::new(start);
+        self.sp.watermark = NonZeroUsize::new(sp);
     }
+
 
     fn handle(&self) -> TaskHandle {
         self.task
@@ -242,7 +259,7 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn sp(&self) -> StackPointer {
-        self.sp
+        self.sp.clone()
     }
 
     fn set_ticks(&self, ticks: Ticks) {
@@ -258,21 +275,15 @@ impl<'task, const WORDS: usize> Process for Task<'task, WORDS> {
     }
 
     fn idle(&mut self) {
-        unsafe {
-            KERNEL.cs(|sched| sched.process_idle(self.prio()));
-        }
+        SystemCall(SysCallType::ProcessIdle(self.prio));
     }
+    
 
     fn stop(&mut self) {
-        unsafe {
-            KERNEL.cs(|sched| sched.process_stop(self.prio()));
-        }
+        SystemCall(SysCallType::ProcessStop(self.prio));
     }
 
     fn sleep(&mut self, ticks: Ticks) {
-        self.set_ticks(ticks);
-        unsafe {
-            KERNEL.cs(|sched| sched.process_sleep(self.prio(), ticks));
-        }
+        SystemCall(SysCallType::ProcessSleep(self.prio, ticks));
     }
 }

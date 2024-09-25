@@ -1,10 +1,14 @@
 use core::arch::asm;
+use core::marker::PhantomData;
 
-use crate::kernel::{Syncable, SysCallType};
+use crate::kernel::SysCallType;
 use crate::kernel::tasks::KERNEL;
+use crate::peripherals::Peripheral;
 
-use cortex_m::interrupt::*;
-use cortex_m::peripheral::{self, Peripherals};
+use super::tasks::Kernel;
+use super::CritSect;
+
+const SCB_ICSR_PENDSVSET: usize = 1 << 28;
 
 /// Stack frame hardware salvata dai Cortex-M
 /// Permette di visualizzare i valori dei registri durante l'ultimo errore
@@ -20,23 +24,207 @@ pub struct ExceptionFrame {
     xpsr: u32,
 }
 
-/*
-#[allow(dead_code)]
-extern "C" {
-    //#[link_section = ".static_kernel_variables"]
-    //static ld_stack_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data_end: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_data: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_bss_start: u32;
-    #[link_section = ".static_kernel_variables"]
-    static ld_bss_end: u32;
+
+#[derive(Clone, Copy)]
+pub(crate) enum Interrupts {
+    SVCall = 11,
+    PendSV = 14,
+    SysTick = 15,
 }
-*/
+
+
+pub(crate) enum IntPrio {
+    Max = 0,
+    Pri01 = 0x10,
+    Pri02 = 0x20,
+    Pri03 = 0x30,
+    Pri04 = 0x40,
+    Pri05 = 0x50,
+    Pri06 = 0x60,
+    Pri07 = 0x70,
+    Pri08 = 0x80,
+    Pri09 = 0x90,
+    Pri10 = 0xA0,
+    Pri11 = 0xB0,
+    Pri12 = 0xC0,
+    Pri13 = 0xD0,
+    Pri14 = 0xE0,
+    Min = 0xF0,
+}
+
+impl IntPrio {
+    fn value(self) -> usize {
+        self as usize
+    }
+}
+
+impl Interrupts {
+    fn number(self) -> u16 {
+        self as u16
+    }
+}
+
+pub enum ClockSource {
+    ExternalClock = 0,
+    CoreClock = 1 << 2,
+}
+
+
+pub(crate) struct CorePeripherals {
+    systick: PhantomData<SysTickTimer>,
+    nvic: PhantomData<NVIC>,
+}
+
+impl CorePeripherals {
+    pub const fn new() -> Self {
+        Self {
+            systick: PhantomData,
+            nvic: PhantomData,
+        }
+    }
+
+    pub fn setup_os(&self) {
+        let nvic = unsafe { NVIC::regs() };
+        nvic.enable_interrupt(Interrupts::SVCall);
+        nvic.enable_interrupt(Interrupts::PendSV);
+        nvic.enable_interrupt(Interrupts::SysTick);
+        nvic.set_interrupt_prio(Interrupts::SVCall, IntPrio::Max);
+        nvic.set_interrupt_prio(Interrupts::SysTick, IntPrio::Pri01);
+        nvic.set_interrupt_prio(Interrupts::PendSV, IntPrio::Min);
+        
+        let systick = unsafe { SysTickTimer::regs() };
+        systick.init();
+    }
+}
+
+/// Struttura dati effettiva sottostante allo ZST di accesso
+#[repr(C)]
+pub(crate) struct SysTickTimer {
+    crs: u32,
+    rvr: u32,
+    cvr: u32,
+    calib: u32,
+}
+
+impl SysTickTimer {
+    const ENABLE: u32 = 1;
+    const TICKINT: u32 = 1 << 1;
+    const CLKSOURCE: u32 = 1 << 2;
+    //const SKEW: u32 = 1 << 30;
+    const TENMS_MASK: u32 = 0x00FF_FFFF;
+
+    pub fn start(&mut self) {
+        self.crs |= Self::ENABLE;
+    }
+
+    pub fn stop(&mut self) {
+        self.crs &= !Self::ENABLE;
+    }
+
+    pub fn set_clocksource(&mut self, cksrc: ClockSource) -> &mut Self {
+        self.crs &= !Self::CLKSOURCE;
+        self.crs |= cksrc as u32;
+        self
+    }
+
+    pub fn int_enable(&mut self) -> &mut Self {
+        self.crs |= Self::TICKINT;
+        self
+    }
+
+    pub fn init(&mut self) {
+        self.stop();
+        let reload = self.get_calibration();
+        self.set_reload(reload).zero_count();
+        self.set_clocksource(ClockSource::CoreClock).int_enable().start();
+    }
+
+    pub fn zero_count(&mut self) -> &mut Self {
+        self.cvr = 0;
+        self
+    }
+
+    pub fn set_reload(&mut self, reload: u32) -> &mut Self {
+        self.rvr = reload;
+        self
+    }
+
+    pub fn get_calibration(&mut self) -> u32 {
+        // let skew = !((self.cvr & Self::SKEW) == Self::SKEW);
+        let tenms = self.calib & Self::TENMS_MASK;
+        tenms
+    }
+}
+
+
+/// Struttura dati effettiva sottostante allo ZST di accesso
+#[repr(C)]
+pub(crate) struct NVIC {
+    iser: [usize; 8],
+    void1: [usize; 24],
+    icer: [usize; 8],
+    ispr: [usize; 8],
+    void2: [usize; 24],
+    icpr: [usize; 8],
+    iabr: [usize; 8],
+    void3: [usize; 32],
+    ipr: [usize; 60],
+    stir: usize,
+}
+
+impl NVIC {
+    pub fn enable_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.iser[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+
+    pub fn disable_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.icer[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn pend_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.ispr[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn clear_interrupt(&mut self, int: Interrupts) {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  self.icpr[0] |= 1 << n,
+            _ => (),
+        };
+    }
+
+    pub fn is_interrupt_active(&self, int: Interrupts) -> bool {
+        let n = int.number();
+        match n {
+            0 ..= 31 =>  (self.icpr[0] & 1 << n) != 0,
+            _ => false,
+        }
+    }
+
+    pub fn set_interrupt_prio(&mut self, int: Interrupts, prio: IntPrio) {
+        let n = (int.number() >> 2) as usize; // Divide per 4
+        self.ipr[n] = prio.value() << (8 * n);
+    }
+
+}
+
+
+crate::make_peripheral!(SysTickTimer: 0xE000_E010);
+crate::make_peripheral!(NVIC: 0xE000_E100);
+
 
 #[doc(hidden)]
 #[derive(Clone, Copy)]
@@ -105,9 +293,6 @@ static __ARM_VECTORS: [Vector; 15] = [
     Vector { handler: SysTick },
 ];
 
-#[no_mangle]
-#[link_section = ".vector_table_interrupts"]
-static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
 
 #[no_mangle]
 pub extern "C" fn NonMaskableInt() {}
@@ -129,17 +314,41 @@ pub extern "C" fn SecureFault() {}
 
 #[no_mangle]
 pub extern "C" fn SysTick() {
+    let cs = CritSect::activate();
+    KERNEL.get(&cs).inc_system_ticks();
+    KERNEL.get(&cs).schedule_next();
+}
+
+#[no_mangle]
+#[link_section = ".vector_table_interrupts"]
+static __INTERRUPTS: [Vector; 240] = [Vector { reserved: 0 }; 240];
+
+#[inline(always)]
+pub fn interrupt_disable() {
     unsafe {
-        KERNEL.inc_system_ticks();
-        KERNEL.schedule_next();
+        asm!("cpsid i");
     }
 }
+
+#[inline(always)]
+pub fn interrupt_enable() {
+    unsafe {
+        asm!("cpsie i");
+    }
+}
+
+#[inline(always)]
+pub fn nop() {
+    unsafe {
+        asm!("nop");
+    }
+}
+
 
 #[naked]
 #[no_mangle]
 #[link_section = ".os_entry"]
 pub unsafe extern "C" fn __ENTRY() {
-
     asm!(
         /* Copy the data segment initializers from flash to SRAM */
         "ldr    r0, =ld_data_start",
@@ -177,39 +386,78 @@ pub unsafe extern "C" fn __ENTRY() {
 
 #[naked]
 #[no_mangle]
+#[link_section = ".os_errorhandler"]
+pub unsafe extern "C" fn HardFaultTrampoline() {
+    asm!(
+        // Ottiene la &Process running
+        "ldr    r3, =KERNEL",
+        "ldr    r2, [r3, #0]",
+        "ldr    r3, [r3, #4]",
+
+        // Test se siamo in contesto privilegiato o in thread
+        "mov    r0, lr",
+        "mov    r1, #4",
+        "tst    r0, r1",
+        
+        // Branch per il contesto
+        "bne    0f",
+        "mrs    r0, MSP",
+        "mov    r1, #2",
+        "b      OSFault",
+        "0:",
+        "mrs    r0, PSP",
+        "mov    r1, #1",
+
+        // Gestione dell'errore da parte di Rust
+        "bl     OSFault",
+
+        // Switch al prossimo task schedulabile
+        // "b      load_first_process", // Non serve più
+        options(noreturn)
+    );
+}
+
+#[naked]
+#[no_mangle]
 pub unsafe extern "C" fn PendSV() {
     asm!(
         // Il layout in memoria di &dyn Process è:
         // [RAM data : *usize; vtable : *usize]
-        // Sono due puntatori. A noi serve il primo puntatore verso la memoria RAM
-        // Nel codice seguente effettueremo questo puntamento per cambiare contesto
+        // Sono due puntatori, non uno solo. Tenere a mente questo.
 
-        // R3: &Scheduler
-        // R2: &dyn Process, running or next
-        // R0: value of StackPointers
+        // r0: &Scheduler
+        // r1: &dyn Process
+        // r2: Start Stack Pointer/Watermark
+        // r3: value of StackPointers
 
         /* Salvataggio del contesto attuale */
         "cpsid	i",
-        "mrs    r0, psp",           // Take PSP value out to r0
-        "stmfd  r0!, {{r4-r11}}",   // Save Context
-        "ldr    r3, =KERNEL",       // Get &Scheduler
-        "ldr    r2, [r3, #0]",      // Get running &dyn Process' StackPointer to switch out
-        "str	r0, [r2]",          // Save PSP value in &dyn Process (same as &StackPointer because of repr(C))
-        "isb",
-        /* Caricamento del nuovo contesto */
-        //"bl     switch_to_next",
-        "ldr    r2, [r3, #8]",      // Get next &dyn Process' StackPointer to switch in
-        "str    r2, [r3, #0]",      // Save &dyn Process' data as running
+        "mrs    r3, psp",           // Take PSP value out to r3
+        "stmfd  r3!, {{r4-r11}}",   // Save Context
+        "ldr    r0, =KERNEL",       // Get &Scheduler
+        "ldr    r1, [r0, #0]",      // Get running &dyn Process to switch out
+        "str	r3, [r1]",          // Save PSP value in &StackPointer (same as &dyn Process)
+        
+        // Calcola il watermark
+        "ldr    r2, [r1, #4]",      // &Start Stack Pointer (ref)
+        "sub    r2, r2, r3",        // Ottiene il numero di bytes nella stack (r2 = SP Start - SP attuale)
+        "lsr    r2, r2, #2",        // Divide per 4 e ottiene il numero di parole (Watermark)
+        "ldr    r3, [r1, #8]",      // Ottiene il vecchio Watermark
+        "cmp    r3, r2",            // Old Water > New Water??
+        "it     lt",                // Abilita le istruzioni condizionali per "minore di"
+        "strlt  r2, [r1, #8]",      // Salva il valore nel WaterMark solo se il vecchio è minore del nuovo
 
-        // Azzera il "next &dyn Process"
-        "mov    r1, #0",
-        "str    r1, [r3, #8]",      // Clear next &dyn Process (seen as None in Rust side)
-        "str    r1, [r3, #12]",     // Clear next &dyn Process (seen as None in Rust side)
+        /* Caricamento del nuovo contesto */
+        "bl     switch_to_next",
+        
         // Carica la nuova stack
-        "ldr    r0, [r2]",          // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}",   // Load Context
-        "str    r0, [r2]",          // Saves new StackPointer value in &dyn Process
-        "msr	psp, r0",           // Moves StackPointer in PSP
+        "ldr    r0, =KERNEL",       // Get &Scheduler
+        "ldr    r1, [r0, #0]",      // Get running &dyn Process' StackPointer to switch out
+        "ldr    r3, [r1]",          // Get value of StackPointer
+        "ldmfd  r3!, {{r4-r11}}",   // Load Context
+        "str    r3, [r1]",          // Saves new StackPointer value in &dyn Process
+        "msr	psp, r3",           // Moves StackPointer in PSP
+        // Instruction Syncro Barrier per sicurezza
         "isb",
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
@@ -219,42 +467,14 @@ pub unsafe extern "C" fn PendSV() {
     );
 }
 
-/*
-NON VA, LOL! Probabilmente non salva i registri perché è già in contesto privilegiato
-e corrompe i puntamenti dell'assembly che viene dopo.
-
-/// Serve per cambiare i task con codice Rust, per maggiore sicurezza
 #[no_mangle]
-pub unsafe extern "C" fn switch_to_next() {
-    SCHEDULER.running = SCHEDULER.next;
-    SCHEDULER.next = None;
-}
-*/
-
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn load_first_process() -> ! {
-    asm!(
-        // R3: &Scheduler
-        // R2: &PCB, running or next
-        // R0: value of StackPointers, running or next
-        /* Caricamento del nuovo contesto */
-        "ldr    r3, =KERNEL",     // Get &Scheduler
-        "ldr    r2, [r3, #0]",    // Get &PCB's StackPointer to run
-        "ldr    r0, [r2]",        // Get value of StackPointer
-        "ldmfd  r0!, {{r4-r11}}", // Load Context
-        "str    r0, [r2]",        // Saves new Stackpointer value in &PCB
-        "msr	psp, r0",         // Moves r0 in PSP
-        "isb",
-        /* Ritorno al thread, con PSP e in modo non privilegiato */
-        "ldr    lr, =0xFFFFFFFD",
-        "cpsie	i",
-        "bx     lr",
-        options(noreturn)
-    );
+#[inline(always)]
+unsafe extern "C" fn switch_to_next(k: &mut Kernel) {
+    k.running = k.next;
+    k.next = None;
 }
 
-pub(crate) fn idle_task() -> ! {
+pub(crate) fn idle_task(_task: &mut dyn crate::kernel::tasks::Process) -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -262,82 +482,76 @@ pub(crate) fn idle_task() -> ! {
     }
 }
 
-#[inline(always)]
-pub fn svc(sys_call: SysCallType) {
-    unsafe {
-        KERNEL.sys_call = sys_call;
+
+
+impl<'p> Kernel<'p> {
+
+    #[inline(always)]
+    pub(crate) fn request_context_switch(&self) {
+        let scb: *mut usize = 0xE000_ED04 as *mut usize;
+
+        unsafe { (*scb) |= SCB_ICSR_PENDSVSET };
     }
+
+    #[naked]
+    #[no_mangle]
+    pub(crate) unsafe extern "C" fn load_first_process(&self) -> ! {
+        asm!(
+            // R0: &Scheduler - dovuto alle AAPCS
+            // R2: &dyn Process, running or next
+            // R3: value of StackPointers, running or next
+            /* Caricamento del nuovo contesto */
+            "ldr    r2, [r0, #0]",    // Get &PCB's StackPointer to run
+            "ldr    r3, [r2]",        // Get value of StackPointer
+            "ldmfd  r3!, {{r4-r11}}", // Load Context
+            "str    r3, [r2]",        // Saves new Stackpointer value in &PCB
+            "msr	psp, r3",         // Moves r0 in PSP
+            "isb",
+            /* Ritorno al thread, con PSP e in modo non privilegiato */
+            "ldr    lr, =0xFFFFFFFD",
+            "cpsie	i",
+            "bx     lr",
+            options(noreturn)
+        );
+    }
+}
+
+
+
+#[allow(non_snake_case)]
+#[inline(always)]
+pub fn SystemCall(sys_call: SysCallType) {
     unsafe {
+        let cs = CritSect::activate();
+        KERNEL.get(&cs).sys_call = sys_call;
+        drop(cs);
+
         match sys_call {
             SysCallType::Nop => (),
-            SysCallType::ProcessIdle =>     asm!("svc    1"),
-            SysCallType::ProcessSleep(_) => asm!("svc    2"),
-            SysCallType::ProcessStop =>     asm!("svc    3"),
-            SysCallType::StartScheduler =>  asm!("svc    4"),
+            SysCallType::ProcessIdle(_) =>      asm!("svc    1"),
+            SysCallType::ProcessSleep(_, _) =>  asm!("svc    2"),
+            SysCallType::ProcessStop(_) =>      asm!("svc    3"),
+            SysCallType::StartScheduler =>      asm!("svc    4"),
         }
     }
 }
 
-#[naked]
-#[no_mangle]
-#[link_section = ".os_errorhandler"]
-pub unsafe extern "C" fn HardFaultTrampoline() {
-    asm!(
-        "mov    r0, lr",
-        "mov    r1, #4",
-        "tst    r0, r1",
-        "bne    0f",
-        "mov    r0, #2",
-        "mrs    r1, MSP",
-        "b      OSFault",
-        "0:",
-        "mov    r0, #1",
-        "mrs    r1, PSP",
-        "b      OSFault",
-        options(noreturn)
-    );
-}
 
+/// Un accesso safe qui non serve, perché siamo al massimo possibile della priorità
+/// dell'NVIC. Questo codice non può essere interrotto da nulla.
 #[no_mangle]
 pub extern "C" fn SVCall() {
-    unsafe {
+    let cs = CritSect::activate();
+    let k = KERNEL.get(&cs);
 
-        match KERNEL.sys_call {
-            SysCallType::Nop => (),
-            SysCallType::StartScheduler => {
-                let mut p = Peripherals::take().unwrap();
+    match k.sys_call {
+        SysCallType::Nop => (),
+        SysCallType::StartScheduler => {
+            k.start();  
+        }
 
-                let sys_tick = &mut p.SYST;
-                sys_tick.set_clock_source(peripheral::syst::SystClkSource::Core);
-                let reload = peripheral::SYST::get_ticks_per_10ms();
-                sys_tick.set_reload(reload);
-                sys_tick.enable_interrupt();
-                sys_tick.enable_counter();
-
-                let nvic = &mut p.NVIC;
-                nvic.set_priority(Interrupts::SVCall, 0);
-                nvic.set_priority(Interrupts::SysTick, 1);
-                nvic.set_priority(Interrupts::PendSV, 255);
-
-                KERNEL.start();
-            }
-
-            SysCallType::ProcessIdle => KERNEL.running_idle(),
-            SysCallType::ProcessStop => KERNEL.running_stop(),
-            SysCallType::ProcessSleep(ticks) => KERNEL.running_sleep(ticks),
-        };
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Interrupts {
-    SVCall = 11,
-    PendSV = 14,
-    SysTick = 15,
-}
-
-unsafe impl InterruptNumber for Interrupts {
-    fn number(self) -> u16 {
-        self as u16
-    }
+        SysCallType::ProcessIdle(prio) => k.process_idle(prio),
+        SysCallType::ProcessStop(prio) => k.process_stop(prio),
+        SysCallType::ProcessSleep(prio, ticks) => k.process_sleep(prio, ticks),
+    };
 }

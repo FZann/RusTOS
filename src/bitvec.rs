@@ -1,51 +1,51 @@
-use core::{fmt::{Binary, Display, Formatter}, usize};
-
+use core::fmt::{Binary, Display, Formatter};
 
 /// BitVector, alias an unsigned number that is used to store an array of booleans
 /// This simple implementation focuses on bit operations and manipulation
 #[derive(Debug, Clone, Copy)]
-pub struct BitVec(usize);
+pub struct BitVec(VecType);
+type VecType = usize;
 
 impl BitVec {
     /// Get number of bits, knowing byte-size and multiply by 8
-    const BITS: usize = core::mem::size_of::<usize>() << 3;
+    pub const BITS: usize = core::mem::size_of::<VecType>() << 3;
 
     /// Mask of all ones 
-    const MASK: usize = usize::MAX;
+    pub const MASK: VecType = VecType::MAX;
 
     /// Create a new vector
     pub const fn new() -> Self {
         BitVec(0)
     }
 
-    pub const fn init(vec: usize) -> Self {
+    pub const fn init(vec: VecType) -> Self {
         BitVec(vec)
     }
 
     /// Sets a single bit in the vector
     #[inline]
-    pub fn set(&mut self, bit: usize) -> &mut Self {
+    pub const fn set(&mut self, bit: usize) -> &mut Self {
         self.0 = self.0 | (1 << bit);
         self
     }
 
     /// Clears a single bit in the vector
     #[inline]
-    pub fn clear(&mut self, bit: usize) -> &mut Self {
+    pub const fn clear(&mut self, bit: usize) -> &mut Self {
         self.0 = self.0 & !(1 << bit);
         self
     }
 
     /// Toggles a single bit in the vector
     #[inline]
-    pub fn toggle(&mut self, bit: usize) -> &mut Self {
+    pub const fn toggle(&mut self, bit: usize) -> &mut Self {
         self.0 = self.0 ^ (1 << bit);
         self
     }
 
     /// Sets first zero bit (LSB)
     #[inline]
-    pub fn set_first_zero(&mut self) -> &mut Self {
+    pub const fn set_first_zero(&mut self) -> &mut Self {
         if let Ok(bit) = self.find_first_zero() {
             self.set(bit);
         }
@@ -54,7 +54,7 @@ impl BitVec {
 
     /// Clears first one bit (LSB)
     #[inline]
-    pub fn clear_first_one(&mut self) -> &mut Self {
+    pub const fn clear_first_one(&mut self) -> &mut Self {
         if let Ok(bit) = self.find_first_zero() {
             self.clear(bit);
         }
@@ -69,7 +69,7 @@ impl BitVec {
 
     /// Get vector as raw number
     #[inline]
-    pub const fn raw(&self) -> usize {
+    pub const fn raw(&self) -> VecType {
         self.0
     }
 
@@ -81,34 +81,34 @@ impl BitVec {
 
     /// Sets vector to zero
     #[inline]
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.0 = 0;
     }
 
     /// Inverts (toggles) all bits in vector. Can be concatenated with others operations.
     #[inline]
-    pub fn invert(&mut self) -> &mut Self {
+    pub const fn invert(&mut self) -> &mut Self {
         self.0 = self.0 ^ Self::MASK;
         self
     }
 
     /// Bitand operation. Can be concatenated with others operations.
     #[inline]
-    pub fn and(&mut self, rhs: &Self) -> &mut Self {
+    pub const fn and(&mut self, rhs: &Self) -> &mut Self {
         self.0 = self.0 & rhs.0;
         self
     }
 
     /// Bitor operation. Can be concatenated with others operations.
     #[inline]
-    pub fn or(&mut self, rhs: &Self) -> &mut Self {
+    pub const fn or(&mut self, rhs: &Self) -> &mut Self {
         self.0 = self.0 | rhs.0;
         self
     }
 
     /// Bitxor operation. Can be concatenated with others operations.
     #[inline]
-    pub fn xor(&mut self, rhs: &Self) -> &mut Self {
+    pub const fn xor(&mut self, rhs: &Self) -> &mut Self {
         self.0 = self.0 ^ rhs.0;
         self
     }
@@ -175,6 +175,7 @@ impl BitVec {
 
 }
 
+
 impl core::ops::BitAnd for BitVec {
     type Output = Self;
 
@@ -215,8 +216,8 @@ impl Binary for BitVec {
     }
 }
 
-impl From<usize> for BitVec {
-    fn from(value: usize) -> Self {
+impl From<VecType> for BitVec {
+    fn from(value: VecType) -> Self {
         BitVec(value)
     }
 }
@@ -241,12 +242,11 @@ impl Iterator for BitVecIter {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.vec.is_empty() {
-            None
-        } else {
-            let bit = self.vec.0.leading_zeros() as usize;
-            self.vec.clear(BitVec::BITS - 1 - bit);
+        if let Ok(bit) = self.vec.find_first_set() {
+            self.vec.clear(bit);
             Some(bit)
+        } else {
+            None
         }
     }
 }
@@ -288,6 +288,18 @@ impl<U: Sized + Default + Copy> BitList<U> {
             Err(())
         }
     }
+
+    pub fn insert_at(&mut self, idx: usize, element: U) -> Result<usize, ()> {
+        let used = self.bv.check(idx);
+        if idx < BitVec::BITS && !used {
+            self.bv.set(idx);
+            self.list[idx] = element;
+            Ok(idx)
+        } else {
+            Err(())
+        }
+    }
+
 
     pub fn peek(&self, idx: usize) -> Result<&U, ()> {
         if self.bv.check(idx) == false {

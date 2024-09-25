@@ -1,130 +1,56 @@
 use core::marker::PhantomData;
 
-use crate::kernel::Syncable;
+use volatile_register::{RW, RO, WO};
+use crate::make_peripherals;
 
-use super::MemMappedRegister;
-
+pub trait OutputType {}
 
 pub struct Input;
-pub struct Output<TYPE> { _type: PhantomData<TYPE>, }
+pub struct Output<TYPE: OutputType> { _type: PhantomData<TYPE>, }
 pub struct PushPull;
 pub struct OpenDrain;
 pub struct NoPull;
 pub struct PullDown;
 pub struct PullUp;
 
-pub trait GpioPort {
-    fn set_high(&mut self, n: usize);
-    fn set_low(&mut self, n: usize);
-    fn set_dir(&mut self, n: usize, dir: usize);
-}
+impl OutputType for PushPull {}
+impl OutputType for OpenDrain {}
 
 
 #[repr(C)]
-pub(crate) struct GpioReg {
-    mode: usize,
-    otype: usize,
-    ospeed: usize,
-    pupd: usize,
-    id: usize,
-    od: usize,
-    bsr: usize,
-    lck: usize,
-    afl: usize,
-    afh: usize,
-    br: usize,
+pub struct GpioReg {
+    mode: RW<u32>,
+    otype: RW<u32>,
+    ospeed: RW<u32>,
+    pupd: RW<u32>,
+    id: RO<u32>,
+    od: RW<u32>,
+    bsr: WO<u32>,
+    lck: RW<u32>,
+    afl: RW<u32>,
+    afh: RW<u32>,
+    br: WO<u32>,
 }
 
-impl GpioPort for GpioReg {
-    fn set_high(&mut self, n: usize) {
-        self.bsr = 1 << n;
+impl GpioReg {
+    pub fn set_high(&mut self, n: usize) {
+        unsafe { self.bsr.write(1 << n); }
     }
 
-    fn set_low(&mut self, n: usize) {
-        self.bsr = 1 << (n + 16);
+    pub fn set_low(&mut self, n: usize) {
+        unsafe { self.bsr.write(1 << (n + 16)); }
     }
 
-    fn set_dir(&mut self, n: usize, dir: usize) {
-        self.mode = dir << (n + n);
-    }
-}
-
-
-pub trait GpioPin {
-    fn set_high(&mut self);
-    fn set_low(&mut self);
-    fn set_dir(&mut self, dir: usize);
-}
-
-pub trait GpioNum {
-    fn num(&self) -> usize;
-}
-
-impl<T> GpioPin for T
-where
-    T: GpioNum,
-    T: MemMappedRegister + 'static,
-    T::Register: GpioPort,
-{
-    fn set_high(&mut self) {
-        Self::as_mut_ref().set_high(self.num());
+    pub fn set_input(&mut self, n: usize) {
+        unsafe { self.mode.modify(|reg| reg & !(1 << (n + n))); }
     }
 
-    fn set_low(&mut self) {
-        Self::as_mut_ref().set_low(self.num());
-    }
-
-    fn set_dir(&mut self, dir: usize) {
-        Self::as_mut_ref().set_dir(self.num(), dir);
+    pub fn set_output(&mut self, n: usize) {
+        unsafe { self.mode.modify(|reg| reg | 1 << (n + n)); }
     }
 }
 
-pub struct Pin<const N: usize, MODE, PULL> {
-    _mode: PhantomData<MODE>,
-    _pull: PhantomData<PULL>,
-}
-
-unsafe impl<const N: usize, MODE, PULL> Sync for Pin<N, MODE, PULL> {}
-impl<const N: usize, MODE, PULL> Syncable for Pin<N, MODE, PULL> {}
-
-impl<const N: usize, MODE, PULL> Pin<N, MODE, PULL> {
-    pub(crate) const fn new() -> Pin<N, Input, PullUp> {
-        Pin::<N, Input, PullUp> {
-            _mode: PhantomData,
-            _pull: PhantomData,
-        }
-    }
-}
-
-impl<const N: usize, MODE, PULL> GpioNum for Pin<N, MODE, PULL> {
-    fn num(&self) -> usize {
-        N
-    }
-}
-
-macro_rules! make_gpio {
-    ($gpio: ident: $addr:expr, $([$pin: ident, $n: expr]),+) => {
-        
-        #[allow(non_snake_case)]
-        pub mod $gpio {
-            use super::{Pin, Input, PullUp};
-            use super::{MemMappedRegister, GpioReg};
-
-            $(pub static mut $pin: Pin<$n, Input, PullUp> = Pin::<$n, Input, PullUp>::new();
-
-            
-            impl<MODE, PULL> MemMappedRegister for Pin<$n, MODE, PULL> {
-                type Register = GpioReg;
-                const ADDRESS: *mut Self::Register = $addr as *mut _;
-            })+
-        }
-    };
-}
-
-
-make_gpio!(GPIOA: 0x4800_0000, [PA5, 5], [PA1, 1]);
-//make_gpio!(GPIOB: 0x4800_0400, [PB5, 5], [PB1, 1]);
-//make_gpio!(GPIOB: 0x4800_0400, [PB5, 5], [PB1, 1]);
-//make_gpio!(GPIOC: 0x4800_0800, [PB5, 5], [PB1, 1]);
-//make_gpio!(GPIOD: 0x4800_0C00, [PB5, 5], [PB1, 1]);
-
+make_peripherals!(GPIOA: 0x4800_0000, GpioReg);
+make_peripherals!(GPIOB: 0x4800_0400, GpioReg);
+make_peripherals!(GPIOC: 0x4800_0800, GpioReg);
+make_peripherals!(GPIOD: 0x4800_0C00, GpioReg);
