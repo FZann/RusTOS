@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-use core::num::NonZeroUsize;
 use core::cell::Cell;
 
 use crate::bitvec::BitVec;
@@ -171,19 +170,26 @@ pub trait Process {
 #[derive(Clone)]
 #[repr(C)]
 pub struct StackPointer<'sp> {
+    ptr: usize,
+    start: usize,
+    watermark: usize,
     lifetime: PhantomData<&'sp usize>,
-    ptr: Option<NonZeroUsize>,
-    start: Option<NonZeroUsize>,
-    watermark: Option<NonZeroUsize>,
 }
 
 impl<'sp> StackPointer<'sp> {
     pub const fn new() -> Self {
         Self {
+            ptr: 0,
+            start: 0,
+            watermark: 0,
             lifetime: PhantomData,
-            ptr: None,
-            start: None,
-            watermark: None,
+        }
+    }
+
+    pub(crate) fn update_watermark(&mut self) {
+        let words = (self.start - self.ptr) >> 2;
+        if words > self.watermark {
+            self.watermark = words;
         }
     }
 }
@@ -244,9 +250,8 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
 
         let sp = &self.stack[WORDS - 16] as *const usize as usize;
         let start = &self.stack[WORDS - 01] as *const usize as usize;
-        self.sp.ptr = NonZeroUsize::new(sp);
-        self.sp.start = NonZeroUsize::new(start);
-        self.sp.watermark = NonZeroUsize::new(sp);
+        self.sp.ptr = sp;
+        self.sp.start = start;
     }
 
 

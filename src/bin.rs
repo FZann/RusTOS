@@ -3,6 +3,8 @@
 
 use RusTOS::kernel::{CritCell, CritSect};
 use RusTOS::kernel::tasks::{Process, Task, KERNEL};
+use RusTOS::peripherals::gpio::GPIOA;
+use RusTOS::peripherals::Peripheral;
 
 static CIAO: CritCell<Task<128>> = CritCell::new(Task::new(ciao, 0));
 static BELLO: CritCell<Task<128>> = CritCell::new(Task::new(bello, 1));
@@ -34,17 +36,18 @@ fn bello(task: &mut dyn Process) -> ! {
         let rccval = rcc.read();
         rcc.write(rccval | 1 << 17);
         
-        //PA5.set_dir(1);
+        GPIOA::regs().set_output(5);
+        GPIOA::regs().set_low(5);
         
         let mut led_state = false;
         loop {
             
             /* Quinto pin per il led (PIN 5) */
-            //QUEUE.cs(|queue| led_state = queue.pop() == 1);
+            task.sleep(250);
             led_state = !led_state;
             match led_state {
-                true => (), //PA5.set_high(),
-                false => (), //PA5.set_low(),
+                true => GPIOA::regs().set_high(5),
+                false => GPIOA::regs().set_low(5),
             }
         }
     }

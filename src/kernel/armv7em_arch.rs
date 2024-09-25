@@ -5,7 +5,7 @@ use crate::kernel::SysCallType;
 use crate::kernel::tasks::KERNEL;
 use crate::peripherals::Peripheral;
 
-use super::tasks::Kernel;
+use super::tasks::{Kernel, StackPointer};
 use super::CritSect;
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
@@ -438,15 +438,15 @@ pub unsafe extern "C" fn PendSV() {
         "ldr    r1, [r0, #0]",      // Get running &dyn Process to switch out
         "str	r3, [r1]",          // Save PSP value in &StackPointer (same as &dyn Process)
         
-        // Calcola il watermark
-        "ldr    r2, [r1, #4]",      // &Start Stack Pointer (ref)
-        "sub    r2, r2, r3",        // Ottiene il numero di bytes nella stack (r2 = SP Start - SP attuale)
-        "lsr    r2, r2, #2",        // Divide per 4 e ottiene il numero di parole (Watermark)
-        "ldr    r3, [r1, #8]",      // Ottiene il vecchio Watermark
-        "cmp    r3, r2",            // Old Water > New Water??
-        "it     lt",                // Abilita le istruzioni condizionali per "minore di"
-        "strlt  r2, [r1, #8]",      // Salva il valore nel WaterMark solo se il vecchio è minore del nuovo
-
+        // Calcola il watermark - Fatto in Rust!
+        //"ldr    r2, [r1, #4]",      // &Start Stack Pointer (ref)
+        //"sub    r2, r2, r3",        // Ottiene il numero di bytes nella stack (r2 = SP Start - SP attuale)
+        //"lsr    r2, r2, #2",        // Divide per 4 e ottiene il numero di parole (Watermark)
+        //"ldr    r3, [r1, #8]",      // Ottiene il vecchio Watermark
+        //"cmp    r3, r2",            // Old Water > New Water??
+        //"it     lt",                // Abilita le istruzioni condizionali per "minore di"
+        //"strlt  r2, [r1, #8]",      // Salva il valore nel WaterMark solo se il vecchio è minore del nuovo
+        
         /* Caricamento del nuovo contesto */
         "bl     switch_to_next",
         
@@ -469,7 +469,8 @@ pub unsafe extern "C" fn PendSV() {
 
 #[no_mangle]
 #[inline(always)]
-unsafe extern "C" fn switch_to_next(k: &mut Kernel) {
+unsafe extern "C" fn switch_to_next(k: &mut Kernel, sp: &mut StackPointer) {
+    sp.update_watermark();
     k.running = k.next;
     k.next = None;
 }

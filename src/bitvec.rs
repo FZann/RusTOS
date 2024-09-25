@@ -229,7 +229,7 @@ impl IntoIterator for &BitVec {
 
     fn into_iter(self) -> Self::IntoIter {
         BitVecIter {
-            vec: self.reverse()
+            vec: self.clone()
         }
     }
 }
