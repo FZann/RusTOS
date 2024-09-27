@@ -4,7 +4,7 @@ use core::cell::UnsafeCell;
 use crate::kernel::tasks::Process;
 use crate::bitvec::BitVec;
 
-use super::{SysCallType, SystemCall};
+use super::{tasks::KERNEL, CritSect};
 
 pub struct Semaphore {
     locked: BitVec,
@@ -20,20 +20,20 @@ impl Semaphore {
     pub fn wait(&mut self, task: &dyn Process) {
         let id = task.prio();
         self.locked.set(id);
-        SystemCall(SysCallType::ProcessStop(id));
+        KERNEL.get(&cs).process_stop(id);
     }
 
     pub fn release(&mut self) {
         if let Ok(id) = self.locked.find_first_set() {
             self.locked.clear(id);
-            SystemCall(SysCallType::ProcessIdle(id));
+            KERNEL.get(&cs).process_idle(id);
         }
     }
 
     /// Serve????
     pub(crate) fn lock_id(&mut self, id: usize) {
         self.locked.set(id);
-        SystemCall(SysCallType::ProcessStop(id));
+        KERNEL.get(&cs).process_stop(id);
     }
 
 }

@@ -4,9 +4,10 @@ use volatile_register::{RW, RO, WO};
 use crate::make_peripherals;
 
 pub trait OutputType {}
+pub trait PullDir {}
 
-pub struct Input;
-pub struct Output<TYPE: OutputType> { _type: PhantomData<TYPE>, }
+pub struct Input<PULL: PullDir>(PhantomData<PULL>);
+pub struct Output<TYPE: OutputType>(PhantomData<TYPE>);
 pub struct PushPull;
 pub struct OpenDrain;
 pub struct NoPull;
@@ -16,6 +17,9 @@ pub struct PullUp;
 impl OutputType for PushPull {}
 impl OutputType for OpenDrain {}
 
+impl PullDir for NoPull {}
+impl PullDir for PullDown {}
+impl PullDir for PullUp {}
 
 #[repr(C)]
 pub struct GpioReg {
