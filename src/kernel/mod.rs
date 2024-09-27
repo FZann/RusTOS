@@ -18,7 +18,7 @@ pub type Ticks = usize;
 pub enum SysCallType {
     Nop,
     ProcessIdle(usize),
-    ProcessSleep(usize, Ticks),
+    ProcessSleep(usize),
     ProcessStop(usize),
     StartScheduler,
 }

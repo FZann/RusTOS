@@ -530,7 +530,7 @@ pub fn SystemCall(sys_call: SysCallType) {
         match sys_call {
             SysCallType::Nop => (),
             SysCallType::ProcessIdle(_) =>      asm!("svc    1"),
-            SysCallType::ProcessSleep(_, _) =>  asm!("svc    2"),
+            SysCallType::ProcessSleep(_) =>     asm!("svc    2"),
             SysCallType::ProcessStop(_) =>      asm!("svc    3"),
             SysCallType::StartScheduler =>      asm!("svc    4"),
         }
@@ -553,6 +553,6 @@ pub extern "C" fn SVCall() {
 
         SysCallType::ProcessIdle(prio) => k.process_idle(prio),
         SysCallType::ProcessStop(prio) => k.process_stop(prio),
-        SysCallType::ProcessSleep(prio, ticks) => k.process_sleep(prio, ticks),
+        SysCallType::ProcessSleep(prio) => k.process_sleep(prio),
     };
 }

@@ -1,51 +1,38 @@
 
-use core::cell::{Cell, UnsafeCell};
+use core::cell::UnsafeCell;
 
 use crate::kernel::tasks::Process;
 use crate::bitvec::BitVec;
 
-use super::{SysCallType, SystemCall, CritSect};
+use super::{SysCallType, SystemCall};
 
 pub struct Semaphore {
-    locked: Cell<BitVec>,
+    locked: BitVec,
 }
 
 impl Semaphore {
     pub const fn new() -> Self {
         Self {
-            locked: Cell::new(BitVec::new()),
+            locked: BitVec::new(),
         }
     }
 
-    pub fn wait(&self, task: &dyn Process) {
-        let cs = CritSect::activate();
-        let mut locked = self.locked.get();
+    pub fn wait(&mut self, task: &dyn Process) {
         let id = task.prio();
-        locked.set(id);
-        self.locked.set(locked);
-        cs.deactivate();
+        self.locked.set(id);
         SystemCall(SysCallType::ProcessStop(id));
     }
 
-    pub fn release(&self) {
-        let cs = CritSect::activate();
-        let mut locked = self.locked.get();
-
-        if let Ok(id) = locked.find_first_set() {
-            locked.clear(id);
-            self.locked.set(locked);
-            cs.deactivate();
+    pub fn release(&mut self) {
+        if let Ok(id) = self.locked.find_first_set() {
+            self.locked.clear(id);
             SystemCall(SysCallType::ProcessIdle(id));
         }
     }
 
     /// Serve????
-    pub(crate) fn lock_id(&self, id: usize) {
-        let cs = CritSect::activate();
-        let mut locked = self.locked.get();
-        locked.set(id);
-        self.locked.set(locked);
-        cs.deactivate();
+    pub(crate) fn lock_id(&mut self, id: usize) {
+        self.locked.set(id);
         SystemCall(SysCallType::ProcessStop(id));
     }
 
@@ -88,11 +75,13 @@ impl<'p, T> Mutex<'p, T> {
 
 /// Coda. L'implementazione sul passaggio dei dati by-value (copia)
 /// e non by-ref (puntatore/riferimento).
-pub struct Queue<T, const SIZE: usize> {
-    sem: Semaphore,
+pub struct Queue<T: Sized + Copy, const SIZE: usize> {
     buf: [Option<T>; SIZE],
     head: usize,
     tail: usize,
+    cnt: usize,
+    push: Semaphore,
+    pop: Semaphore,
 }
 
 impl<T, const SIZE: usize> Queue<T, SIZE>
@@ -101,44 +90,48 @@ where
 {
     pub const fn new() -> Self {
         Self {
-            sem: Semaphore::new(),
             buf: [None; SIZE],
             head: 0,
             tail: 0,
+            cnt: 0,
+            push: Semaphore::new(),
+            pop: Semaphore::new(),
         }
     }
 
     pub fn push(&mut self, task: &dyn Process, object: T) {
         // Andiamo in attesa col semaforo, perché la coda è piena
-        while self.buf[self.head].is_some() {
-            self.sem.wait(task);
+        if self.cnt == SIZE {
+            self.push.wait(task);
         }
 
         self.buf[self.head] = Some(object);
         self.head += 1;
+        self.cnt += 1;
         if self.head >= SIZE {
             self.head = 0;
         }
 
-        self.sem.release(); // Segnalazione per eventuali pop in attesa
+        self.pop.release(); // Segnalazione per eventuali pop in attesa
     }
 
-    pub fn pop(&mut self, task: &dyn Process) -> T {
+    pub fn pop(&mut self, task: &dyn Process, object: &mut T) {
         // Andiamo in attesa col semaforo, perché la coda è vuota
-        if self.buf[self.tail].is_none() {
-            self.sem.wait(task);
+        if self.cnt == 0 {
+            //self.pop.wait(task);
         }
 
         // Unwrap non panica sicuramente, abbiamo fatto il test prima!
-        let result = self.buf[self.tail].take().unwrap();
-        self.tail += 1;
-        if self.tail >= SIZE {
-            self.tail = 0;
+        if let Some(obj) = self.buf[self.tail].take() {
+            *object = obj;
+            self.tail += 1;
+            self.cnt -= 1;
+            if self.tail >= SIZE {
+                self.tail = 0;
+            }
         }
         
-        self.sem.release(); // Segnalazione per eventuali push in attesa
-
-        result
+        //self.push.release(); // Segnalazione per eventuali push in attesa
     }
 }
 

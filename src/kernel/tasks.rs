@@ -71,6 +71,8 @@ impl<'p> Kernel<'p> {
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
     }
+
+    #[inline]
     fn running(&self) -> &dyn Process {
         self.running.unwrap()
     }
@@ -87,11 +89,10 @@ impl<'p> Kernel<'p> {
         self.schedule_next();
     }
 
-    pub(crate) fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
+    pub(crate) fn process_sleep(&mut self, prio: usize) {
         if let Some(pcb) = self.processes[prio] {
             self.ready.clear(prio);
             self.sleeping.set(prio);
-            pcb.set_ticks(ticks);
             self.schedule_next();
         }
     }
@@ -254,19 +255,22 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
         self.sp.start = start;
     }
 
-
+    #[inline]
     fn handle(&self) -> TaskHandle {
         self.task
     }
 
+    #[inline]
     fn prio(&self) -> usize {
         self.prio as usize
     }
 
+    #[inline]
     fn sp(&self) -> StackPointer {
         self.sp.clone()
     }
 
+    #[inline]
     fn set_ticks(&self, ticks: Ticks) {
         self.ticks.set(ticks);
     }
@@ -279,16 +283,19 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
         ticks
     }
 
+    #[inline]
     fn idle(&mut self) {
         SystemCall(SysCallType::ProcessIdle(self.prio));
     }
     
-
+    #[inline]
     fn stop(&mut self) {
         SystemCall(SysCallType::ProcessStop(self.prio));
     }
 
+    #[inline]
     fn sleep(&mut self, ticks: Ticks) {
-        SystemCall(SysCallType::ProcessSleep(self.prio, ticks));
+        self.ticks.set(ticks);
+        SystemCall(SysCallType::ProcessSleep(self.prio));
     }
 }
