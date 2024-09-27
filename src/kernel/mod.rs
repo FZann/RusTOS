@@ -9,7 +9,7 @@ use core::cell::UnsafeCell;
 pub(crate) use self::armv7em_arch::idle_task;
 pub use self::armv7em_arch::SystemCall;
 pub use self::armv7em_arch::ExceptionFrame;
-pub(crate) use self::armv7em_arch::CorePeripherals as CorePeripherals;
+pub(crate) use self::armv7em_arch::core_peripherals::CorePeripherals as CorePeripherals;
 use self::armv7em_arch::{interrupt_disable, interrupt_enable};
 
 pub type Ticks = usize;
@@ -17,10 +17,8 @@ pub type Ticks = usize;
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
 pub enum SysCallType {
     Nop,
-    ProcessIdle(usize),
-    ProcessSleep(usize, Ticks),
-    ProcessStop(usize),
     StartScheduler,
+    ContextSwith,
 }
 
 

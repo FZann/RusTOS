@@ -31,6 +31,9 @@ pub struct Kernel<'p> {
     /* !!! --------------------- !!! */
     pub(crate) sys_call: SysCallType,
 
+    /// Ticks totali da quando il sistema è partito
+    ticks: u64,
+
     /// Periferiche del core
     core: CorePeripherals,  
 
@@ -46,6 +49,7 @@ impl<'p> Kernel<'p> {
             running: None,
             next: None,
             sys_call: SysCallType::Nop,
+            ticks: 0,
             core: CorePeripherals::new(),
             processes: [None; BitVec::BITS],
             ready: BitVec::new(),
@@ -100,6 +104,8 @@ impl<'p> Kernel<'p> {
     /// di sistema, fino all'azzeramento.
     /// A questo punto il task torna schedulabile.
     pub(crate) fn inc_system_ticks(&mut self) {
+        self.ticks += 1;
+
         for id in self.sleeping.into_iter() {
             let task = self.processes[id].unwrap();
             if task.decrement_ticks() == 0 {
@@ -117,13 +123,15 @@ impl<'p> Kernel<'p> {
         match (self.running().prio(), self.ready.find_first_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                self.request_context_switch();
+                SystemCall(SysCallType::ContextSwith);
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
+                // TODO: implementa lo sleep e rimuovi totalmente IDLE_TASK
+                self.core.sleep_on_exit(true);
                 self.next = unsafe { Some(&IDLE_TASK) };
-                self.request_context_switch();
+                SystemCall(SysCallType::ContextSwith);
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla
@@ -177,7 +185,7 @@ pub struct StackPointer<'sp> {
 }
 
 impl<'sp> StackPointer<'sp> {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             ptr: 0,
             start: 0,
@@ -280,15 +288,15 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
     }
 
     fn idle(&mut self) {
-        SystemCall(SysCallType::ProcessIdle(self.prio));
+        KERNEL.with(|k| k.process_idle(self.prio));
     }
     
 
     fn stop(&mut self) {
-        SystemCall(SysCallType::ProcessStop(self.prio));
+        KERNEL.with(|k| k.process_stop(self.prio));
     }
 
     fn sleep(&mut self, ticks: Ticks) {
-        SystemCall(SysCallType::ProcessSleep(self.prio, ticks));
+        KERNEL.with(|k| k.process_sleep(self.prio, ticks));
     }
 }
