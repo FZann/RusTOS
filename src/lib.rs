@@ -29,7 +29,6 @@ fn OSFault(_frame: &ExceptionFrame, error: HardFaultError, running: &mut dyn Pro
     // Qui non possiamo essere interrotti: HardFault ha la massima priorità a livello HW
     // Quindi possiamo prendere la &mut del KERNEL senza CriticalSection
     unsafe { 
-        KERNEL.get_unsafe().schedule_next();
-        // ?? KERNEL.get_unsafe().load_first_process();
+        KERNEL.get_unsafe().load_first_process();
     };
 }

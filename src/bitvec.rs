@@ -153,11 +153,18 @@ impl BitVec {
         self.0.count_zeros() as usize
     }
     
+    pub const fn find_higher_set(&self) -> Result<usize, ()> {
+        if self.is_populated() {
+            Ok(Self::BITS - 1 - self.0.leading_zeros() as usize)
+        } else {
+            Err(())
+        }
+    }
+
     #[inline]
     pub const fn find_first_set(&self) -> Result<usize, ()> {
-        let zeros = self.0.trailing_zeros() as usize;
-        if zeros <= 31 {
-            Ok(zeros)
+        if self.is_populated() {
+            Ok(self.0.trailing_zeros() as usize)
         } else {
             Err(())
         }
@@ -242,7 +249,7 @@ impl Iterator for BitVecIter {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Ok(bit) = self.vec.find_first_set() {
+        if let Ok(bit) = self.vec.find_higher_set() {
             self.vec.clear(bit);
             Some(bit)
         } else {
@@ -361,7 +368,7 @@ impl<'a, U: Sized> Iterator for BitListIter<'a, U> {
     type Item = (usize, &'a U);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Ok(bit) = self.vec.find_first_set() {
+        if let Ok(bit) = self.vec.find_higher_set() {
             self.vec.clear(bit);
             Some((bit, &self.items[bit]))
         } else {

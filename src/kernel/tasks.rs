@@ -72,8 +72,9 @@ impl<'p> Kernel<'p> {
             self.running = Some(&IDLE_TASK);
             IDLE_TASK.setup();
             self.load_first_process();
-            /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
+            
+            /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
     }
 
     #[inline]
@@ -121,10 +122,11 @@ impl<'p> Kernel<'p> {
     /// Altrimenti lancia l'idle task, che mette in sleep la CPU
     pub(crate) fn schedule_next(&mut self) {
         /* Con una singola clz troviamo subito il prossimo processo schedulabile */
-        match (self.running().prio(), self.ready.find_first_set()) {
+        match (self.running().prio(), self.ready.find_higher_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                SystemCall(SysCallType::ContextSwith);
+                unsafe { KERNEL.get_unsafe().request_context_switch() };
+                //SystemCall(SysCallType::ContextSwith);
             }
 
             // Non c'è un task da schedulare!
@@ -132,7 +134,8 @@ impl<'p> Kernel<'p> {
                 // TODO: implementa lo sleep e rimuovi totalmente IDLE_TASK
                 self.core.sleep_on_exit(true);
                 self.next = unsafe { Some(&IDLE_TASK) };
-                SystemCall(SysCallType::ContextSwith);
+                unsafe { KERNEL.get_unsafe().request_context_switch() };
+                //SystemCall(SysCallType::ContextSwith);
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla

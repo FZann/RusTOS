@@ -9,7 +9,7 @@ use RusTOS::peripherals::Peripheral;
 
 static CIAO: CritCell<Task<128>> = CritCell::new(Task::new(ciao, 0));
 static BELLO: CritCell<Task<128>> = CritCell::new(Task::new(bello, 1));
-//static SEM: CritCell<Semaphore> =CritCell::new(Semaphore::new());
+static SEM: CritCell<Semaphore> = CritCell::new(Semaphore::new());
 static QUEUE: CritCell<Queue<u32, 1>> = CritCell::new(Queue::new());
 
 #[no_mangle]
@@ -25,7 +25,10 @@ fn ciao(task: &mut dyn Process) -> ! {
     let mut c = 0u32;
     loop {
         c += 1;
-        QUEUE.with(|queue| queue.push(task, c));
+
+        
+        //QUEUE.with(|queue| queue.push(task, c));
+        SEM.with(|s| s.release());
         task.sleep(500);
     }
 }
@@ -41,15 +44,21 @@ fn bello(task: &mut dyn Process) -> ! {
         GPIOA::regs().set_low(5);
         
         let mut led_state = false;
+        
+        core::arch::asm!(
+            "ldr    r0, =ld_data",
+            "str    r3, [r0]",
+        );
+
 
         loop {
             let q = QUEUE.get_unsafe();
-            let mut x = 0u32;
-            q.pop(task, &mut x);
-            led_state = x & 1 == 1;
+            //let mut x = 0u32;
+            //q.pop(task, &mut x);
+            //led_state = x & 1 == 1;
 
-            //SEM.with(|s| s.wait(task));
-            //led_state = !led_state;
+            SEM.with(|s| s.wait(task));
+            led_state = !led_state;
             match led_state {
                 true => GPIOA::regs().set_high(5),
                 false => GPIOA::regs().set_low(5),
