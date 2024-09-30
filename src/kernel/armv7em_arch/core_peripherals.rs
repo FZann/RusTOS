@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use crate::peripherals::Peripheral;
+use crate::{kernel::ExecContext, peripherals::Peripheral};
 
 crate::make_peripheral!(SysTickTimer: 0xE000_E010);
 crate::make_peripheral!(NVIC: 0xE000_E100);
@@ -153,7 +153,6 @@ impl CorePeripherals {
     pub(crate) fn sleep_on_exit(&self, sleep: bool) {
         // TODO: implementa lo sleep-on-exit di ARM
     }
-    
 }
 
 /// Struttura dati effettiva sottostante allo ZST di accesso

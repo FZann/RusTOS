@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::utils::{Queue, Semaphore};
 use RusTOS::kernel::{CritCell, CritSect};
 use RusTOS::kernel::tasks::{Process, Task, KERNEL};
 use RusTOS::peripherals::gpio::GPIOA;

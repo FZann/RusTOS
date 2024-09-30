@@ -7,8 +7,8 @@ pub struct BitVec(VecType);
 type VecType = usize;
 
 impl BitVec {
-    /// Get number of bits, knowing byte-size and multiply by 8
-    pub const BITS: usize = core::mem::size_of::<VecType>() << 3;
+    /// Get number of bits
+    pub const BITS: usize = VecType::BITS as usize;
 
     /// Mask of all ones 
     pub const MASK: VecType = VecType::MAX;

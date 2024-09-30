@@ -8,7 +8,7 @@ pub mod bitvec;
 
 use core::panic::PanicInfo;
 
-use kernel::{tasks::{Process, KERNEL}, ExceptionFrame, HardFaultError};
+use kernel::{tasks::{Process, KERNEL}, ExceptionFrame, ExecContext};
 
 #[panic_handler]
 pub fn panic_handler(_: &PanicInfo) -> ! {
@@ -18,8 +18,8 @@ pub fn panic_handler(_: &PanicInfo) -> ! {
 #[no_mangle]
 #[allow(non_snake_case)]
 #[inline(always)]
-fn OSFault(_frame: &ExceptionFrame, error: HardFaultError, running: &mut dyn Process) {
-    if error == HardFaultError::FromPrivileged {
+fn OSFault(_frame: &ExceptionFrame, ctx: ExecContext, running: &mut dyn Process) {
+    if ctx == ExecContext::Privileged {
         panic!("From kernel!");
     };
 
