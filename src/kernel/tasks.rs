@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::cell::Cell;
+use core::cell::{Cell, UnsafeCell};
 
 use crate::bitvec::BitVec;
 use crate::kernel::{SysCallType, Ticks, CorePeripherals};
@@ -75,8 +75,6 @@ impl<'p> Kernel<'p> {
             /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
         }
     }
-
-    #[inline]
     fn running(&self) -> &dyn Process {
         self.running.unwrap()
     }
@@ -93,10 +91,11 @@ impl<'p> Kernel<'p> {
         self.schedule_next();
     }
 
-    pub(crate) fn process_sleep(&mut self, prio: usize) {
+    pub(crate) fn process_sleep(&mut self, prio: usize, ticks: Ticks) {
         if let Some(pcb) = self.processes[prio] {
             self.ready.clear(prio);
             self.sleeping.set(prio);
+            pcb.set_ticks(ticks);
             self.schedule_next();
         }
     }
@@ -124,15 +123,16 @@ impl<'p> Kernel<'p> {
         match (self.running().prio(), self.ready.find_first_set()) {
             (run, Ok(next)) if run != next => {
                 self.next = self.processes[next];
-                SystemCall(SysCallType::ContextSwith);
+                self.request_context_switch();                    
             }
 
             // Non c'è un task da schedulare!
             (_, Err(_)) => {
                 // TODO: implementa lo sleep e rimuovi totalmente IDLE_TASK
                 self.core.sleep_on_exit(true);
+
                 self.next = unsafe { Some(&IDLE_TASK) };
-                SystemCall(SysCallType::ContextSwith);
+                self.request_context_switch();                    
             }
             // Entriamo in questa casistica se run.prio() == self.schedulable.first_set().id
             // Quindi usciamo senza fare nulla
@@ -263,22 +263,19 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
         self.sp.start = start;
     }
 
-    #[inline]
+
     fn handle(&self) -> TaskHandle {
         self.task
     }
 
-    #[inline]
     fn prio(&self) -> usize {
         self.prio as usize
     }
 
-    #[inline]
     fn sp(&self) -> StackPointer {
         self.sp.clone()
     }
 
-    #[inline]
     fn set_ticks(&self, ticks: Ticks) {
         self.ticks.set(ticks);
     }
@@ -291,19 +288,16 @@ impl<'t, const WORDS: usize> Process for Task<'t, WORDS> {
         ticks
     }
 
-    #[inline]
     fn idle(&mut self) {
         KERNEL.with(|k| k.process_idle(self.prio));
     }
     
-    #[inline]
+
     fn stop(&mut self) {
         KERNEL.with(|k| k.process_stop(self.prio));
     }
 
-    #[inline]
     fn sleep(&mut self, ticks: Ticks) {
-        self.ticks.set(ticks);
-        KERNEL.with(|k| k.process_sleep(self.prio));
+        KERNEL.with(|k| k.process_sleep(self.prio, ticks));
     }
 }

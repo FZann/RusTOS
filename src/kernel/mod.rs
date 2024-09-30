@@ -24,9 +24,30 @@ pub enum SysCallType {
 
 #[repr(C)]
 #[derive(PartialEq, Eq)]
-pub enum HardFaultError {
-    FromProcess = 1,
-    FromPrivileged = 2,
+pub enum ExecContext {
+    Privileged = 0,
+    Process = 1,
+    Error = 2,
+}
+
+impl From<usize> for ExecContext {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => ExecContext::Privileged,
+            1 => ExecContext::Process,
+            _ => ExecContext::Error,
+        }
+    }
+}
+
+impl ExecContext {
+    pub fn is_privileged(&self) -> bool {
+        *self == ExecContext::Privileged
+    }
+
+    pub fn is_process(&self) -> bool {
+        *self == ExecContext::Process
+    }
 }
 
 /// Astrazione per rendere Sync-safe le shared globals.

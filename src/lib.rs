@@ -8,7 +8,7 @@ pub mod bitvec;
 
 use core::panic::PanicInfo;
 
-use kernel::{tasks::{Process, KERNEL}, ExceptionFrame, HardFaultError};
+use kernel::{tasks::{Process, KERNEL}, ExceptionFrame, ExecContext};
 
 #[panic_handler]
 pub fn panic_handler(_: &PanicInfo) -> ! {
@@ -18,8 +18,8 @@ pub fn panic_handler(_: &PanicInfo) -> ! {
 #[no_mangle]
 #[allow(non_snake_case)]
 #[inline(always)]
-fn OSFault(_frame: &ExceptionFrame, error: HardFaultError, running: &mut dyn Process) {
-    if error == HardFaultError::FromPrivileged {
+fn OSFault(_frame: &ExceptionFrame, ctx: ExecContext, running: &mut dyn Process) {
+    if ctx == ExecContext::Privileged {
         panic!("From kernel!");
     };
 
@@ -29,7 +29,7 @@ fn OSFault(_frame: &ExceptionFrame, error: HardFaultError, running: &mut dyn Pro
     // Qui non possiamo essere interrotti: HardFault ha la massima priorità a livello HW
     // Quindi possiamo prendere la &mut del KERNEL senza CriticalSection
     unsafe { 
-        KERNEL.get_unsafe().schedule_next();
-        // ?? KERNEL.get_unsafe().load_first_process();
+        // KERNEL.get_unsafe().schedule_next();
+        KERNEL.get_unsafe().load_first_process();
     };
 }

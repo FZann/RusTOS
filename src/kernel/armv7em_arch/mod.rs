@@ -1,11 +1,14 @@
 pub(crate) mod core_peripherals;
 
 use core::arch::asm;
+use core::task::Context;
 
 use crate::kernel::tasks::{Kernel, KERNEL};
 use crate::kernel::tasks::StackPointer;
 use crate::kernel::SysCallType;
 use crate::kernel::CritSect;
+
+use super::ExecContext;
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
 
@@ -191,26 +194,12 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
         "ldr    r2, [r3, #0]",
         "ldr    r3, [r3, #4]",
 
-        // Test se siamo in contesto privilegiato o in thread
         "mov    r0, lr",
-        "mov    r1, #4",
-        "tst    r0, r1",
-        
-        // Branch per il contesto
-        "bne    0f",
-        "mrs    r0, MSP",
-        "mov    r1, #2",
-        "b      OSFault",
-        "0:",
-        "mrs    r0, PSP",
-        "mov    r1, #1",
+        "msr    CONTROL, r1",       // Test se siamo in contesto privilegiato o in thread
 
         // Gestione dell'errore da parte di Rust
         "b      OSFault",
-//      "bl     OSFault",       // Non serve più, credo
 
-        // Switch al prossimo task schedulabile
-        // "b      load_first_process", // Non serve più
         options(noreturn)
     );
 }
@@ -265,14 +254,7 @@ pub unsafe extern "C" fn PendSV() {
     );
 }
 
-#[no_mangle]
-#[inline(always)]
-unsafe extern "C" fn switch_to_next<'k>(k: &'k mut Kernel<'k>, sp: &'k mut StackPointer) -> &'k mut Kernel<'k> {
-    sp.update_watermark();
-    k.running = k.next;
-    k.next = None;
-    k
-}
+
 
 pub(crate) fn idle_task(_task: &mut dyn crate::kernel::tasks::Process) -> ! {
     loop {
@@ -288,9 +270,12 @@ impl<'p> Kernel<'p> {
 
     #[inline(always)]
     pub(crate) fn request_context_switch(&self) {
-        let scb: *mut usize = 0xE000_ED04 as *mut usize;
-
-        unsafe { (*scb) |= SCB_ICSR_PENDSVSET };
+        if Kernel::get_context().is_privileged() {
+            let scb: *mut usize = 0xE000_ED04 as *mut usize;
+            unsafe { (*scb) |= SCB_ICSR_PENDSVSET };
+        } else {
+            SystemCall(SysCallType::ContextSwith);
+        }
     }
 
     #[naked]
@@ -314,6 +299,28 @@ impl<'p> Kernel<'p> {
             options(noreturn)
         );
     }
+
+    #[no_mangle]
+    #[inline(always)]
+    unsafe extern "C" fn switch_to_next<'k>(&mut self, sp: &'k mut StackPointer) -> &Self {
+        sp.update_watermark();
+        self.running = self.next;
+        self.next = None;
+        self
+    }
+
+    #[inline(always)]
+    pub(crate) extern "C" fn get_context() -> ExecContext {
+        let val: usize;
+        unsafe {
+            asm!(
+                "msr    CONTROL, {out}",
+                out = out(reg) val,
+            );
+            val.into()
+        }
+    }
+
 }
 
 
