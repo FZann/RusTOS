@@ -1,38 +1,37 @@
 #![no_std]
 #![no_main]
 
-use RusTOS::kernel::{CritCell, CritSect};
-use RusTOS::kernel::tasks::{Process, Task, KERNEL};
+use RusTOS::kernel::utils::{Queue, Semaphore};
+use RusTOS::kernel::CritSect;
+use RusTOS::kernel::tasks::{KERNEL, TCB};
 use RusTOS::peripherals::gpio::GPIOA;
 use RusTOS::peripherals::Peripheral;
 
-static CIAO: CritCell<Task<128>> = CritCell::new(Task::new(ciao, 0));
-static BELLO: CritCell<Task<128>> = CritCell::new(Task::new(bello, 1));
-static SEM: CritCell<Semaphore> = CritCell::new(Semaphore::new());
-static QUEUE: CritCell<Queue<u32, 1>> = CritCell::new(Queue::new());
+//static SEM: CritCell<Semaphore> = CritCell::new(Semaphore::new());
+//static QUEUE: CritCell<Queue<u32, 1>> = CritCell::new(Queue::new());
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     let cs = CritSect::activate();
-    let _ = KERNEL.get(&cs).add_process(CIAO.get(&cs));
-    let _ = KERNEL.get(&cs).add_process(BELLO.get(&cs));
+    let _ = KERNEL.get(&cs).new_task(ciao, 0, 128);
+    let _ = KERNEL.get(&cs).new_task(bello, 1, 128);
     KERNEL.get(&cs).init(cs);
 }
 
-fn ciao(task: &mut dyn Process) -> ! {
-    let mut c = 0u32;
+fn ciao(task: &mut TCB) -> ! {
+    let mut c = 0usize;
     loop {
         c += 1;
 
         
         //QUEUE.with(|queue| queue.push(task, c));
-        SEM.with(|s| s.release());
-        task.sleep(500);
+        //SEM.with(|s| s.release());
+        task.sleep(c as u64);
     }
 }
 
-fn bello(task: &mut dyn Process) -> ! {
+fn bello(task: &mut TCB) -> ! {
     unsafe {
         let mut rcc: *mut usize = 0x4002_1000 as *mut usize;
         rcc = rcc.add(5);
@@ -44,20 +43,22 @@ fn bello(task: &mut dyn Process) -> ! {
         
         let mut led_state = false;
         
+        /* 
         core::arch::asm!(
             "ldr    r0, =ld_data",
             "str    r3, [r0]",
         );
-
+        */
 
         loop {
-            let q = QUEUE.get_unsafe();
+            //let q = QUEUE.get_unsafe();
             //let mut x = 0u32;
             //q.pop(task, &mut x);
             //led_state = x & 1 == 1;
 
-            SEM.with(|s| s.wait(task));
+            //SEM.with(|s| s.wait(task));
             led_state = !led_state;
+            task.sleep(500);
             match led_state {
                 true => GPIOA::regs().set_high(5),
                 false => GPIOA::regs().set_low(5),

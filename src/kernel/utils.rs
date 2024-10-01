@@ -1,25 +1,23 @@
 
-use core::cell::{Cell, UnsafeCell};
+use core::cell::UnsafeCell;
 
-use crate::kernel::tasks::Process;
+use crate::kernel::tasks::TCB;
 use crate::bitvec::BitVec;
 
 use super::tasks::KERNEL;
 
 pub struct Semaphore {
-    locked: Cell<BitVec>,
+    locked: BitVec,
 }
 
 impl Semaphore {
     pub const fn new() -> Self {
         Self {
-            locked: Cell::new(BitVec::new()),
+            locked: BitVec::new(),
         }
     }
 
-    pub fn wait(&self, task: &dyn Process) {
-        let cs = CritSect::activate();
-        let mut locked = self.locked.get();
+    pub fn wait(&mut self, task: &TCB) {
         let id = task.prio();
         self.locked.set(id);
         unsafe { KERNEL.get_unsafe().process_stop(id) };
@@ -41,7 +39,7 @@ impl Semaphore {
 }
 
 pub struct Mutex<'p, T> {
-    locker: Option<&'p dyn Process>,
+    locker: Option<&'p TCB<'p>>,
     resource: UnsafeCell<T>,
     sem: Semaphore,
 }
@@ -55,7 +53,7 @@ impl<'p, T> Mutex<'p, T> {
         }
     }
 
-    pub fn acquire(&mut self, task: &'p dyn Process) -> &mut T {
+    pub fn acquire(&mut self, task: &'p TCB) -> &mut T {
         if self.locker.is_some() {
             self.sem.wait(task);
         }
@@ -64,7 +62,7 @@ impl<'p, T> Mutex<'p, T> {
         unsafe { &mut *self.resource.get() }
     }
 
-    pub fn release(&mut self, task: &dyn Process) {
+    pub fn release(&mut self, task: &TCB) {
         if let Some(locked) = self.locker {
             if locked.prio() == task.prio() {
                 self.locker = None;
@@ -97,7 +95,7 @@ where
         }
     }
 
-    pub fn push(&mut self, task: &dyn Process, object: T) {
+    pub fn push(&mut self, task: &TCB, object: T) {
         // Andiamo in attesa col semaforo, perché la coda è piena
         while self.buf[self.head].is_some() {
             self.sem.wait(task);
@@ -112,7 +110,7 @@ where
         self.sem.release(); // Segnalazione per eventuali pop in attesa
     }
 
-    pub fn pop(&mut self, task: &dyn Process) -> T {
+    pub fn pop(&mut self, task: &TCB) -> T {
         // Andiamo in attesa col semaforo, perché la coda è vuota
         if self.buf[self.tail].is_none() {
             self.sem.wait(task);

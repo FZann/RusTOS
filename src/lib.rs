@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(naked_functions)]
+#![allow(dead_code)]
 
 pub mod kernel;
 pub mod peripherals;
@@ -8,7 +9,7 @@ pub mod bitvec;
 
 use core::panic::PanicInfo;
 
-use kernel::{tasks::{Process, KERNEL}, ExceptionFrame, ExecContext};
+use kernel::{tasks::{TCB, KERNEL}, ExceptionFrame, ExecContext};
 
 #[panic_handler]
 pub fn panic_handler(_: &PanicInfo) -> ! {
@@ -18,9 +19,9 @@ pub fn panic_handler(_: &PanicInfo) -> ! {
 #[no_mangle]
 #[allow(non_snake_case)]
 #[inline(always)]
-fn OSFault(_frame: &ExceptionFrame, ctx: ExecContext, running: &mut dyn Process) {
+fn OSFault(_frame: &ExceptionFrame, ctx: ExecContext, running: &mut TCB) {
     if ctx == ExecContext::Privileged {
-        panic!("From kernel!");
+        //panic!("From kernel!");
     };
 
     // Reimpostiamo il task che ha dato rogne

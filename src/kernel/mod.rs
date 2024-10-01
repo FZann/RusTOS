@@ -12,7 +12,7 @@ pub use self::armv7em_arch::ExceptionFrame;
 pub(crate) use self::armv7em_arch::core_peripherals::CorePeripherals as CorePeripherals;
 use self::armv7em_arch::{interrupt_disable, interrupt_enable};
 
-pub type Ticks = usize;
+pub type Ticks = u64;
 
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
 pub enum SysCallType {

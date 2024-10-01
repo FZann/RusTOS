@@ -1,10 +1,9 @@
 pub(crate) mod core_peripherals;
 
 use core::arch::asm;
-use core::task::Context;
 
 use crate::kernel::tasks::{Kernel, KERNEL};
-use crate::kernel::tasks::StackPointer;
+use crate::kernel::tasks::Stack;
 use crate::kernel::SysCallType;
 use crate::kernel::CritSect;
 
@@ -195,7 +194,12 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
         "ldr    r3, [r3, #4]",
 
         "mov    r0, lr",
-        "msr    CONTROL, r1",       // Test se siamo in contesto privilegiato o in thread
+        "mrs    r1, CONTROL",       // Test se siamo in contesto privilegiato o in thread
+        "cmp    r1, #0",
+
+        "ite    eq",
+        "mrseq  r0, MSP",
+        "mrsne  r0, PSP",
 
         // Gestione dell'errore da parte di Rust
         "b      OSFault",
@@ -208,10 +212,6 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 #[no_mangle]
 pub unsafe extern "C" fn PendSV() {
     asm!(
-        // Il layout in memoria di &dyn Process è:
-        // [RAM data : *usize; vtable : *usize]
-        // Sono due puntatori, non uno solo. Tenere a mente questo.
-
         // r0: &Scheduler
         // r1: &dyn Process
         // r2: Start Stack Pointer/Watermark
@@ -225,15 +225,6 @@ pub unsafe extern "C" fn PendSV() {
         "ldr    r1, [r0, #0]",      // Get running &dyn Process to switch out
         "str	r3, [r1]",          // Save PSP value in &StackPointer (same as &dyn Process)
         
-        // Calcola il watermark - Fatto in Rust!
-        //"ldr    r2, [r1, #4]",      // &Start Stack Pointer (ref)
-        //"sub    r2, r2, r3",        // Ottiene il numero di bytes nella stack (r2 = SP Start - SP attuale)
-        //"lsr    r2, r2, #2",        // Divide per 4 e ottiene il numero di parole (Watermark)
-        //"ldr    r3, [r1, #8]",      // Ottiene il vecchio Watermark
-        //"cmp    r3, r2",            // Old Water > New Water??
-        //"it     lt",                // Abilita le istruzioni condizionali per "minore di"
-        //"strlt  r2, [r1, #8]",      // Salva il valore nel WaterMark solo se il vecchio è minore del nuovo
-        
         /* Caricamento del nuovo contesto */
         "bl     switch_to_next",
         
@@ -246,6 +237,7 @@ pub unsafe extern "C" fn PendSV() {
         "msr	psp, r3",           // Moves StackPointer in PSP
         // Instruction Syncro Barrier per sicurezza
         "isb",
+
         /* Ritorno al thread, con PSP e in modo non privilegiato */
         "ldr    lr, =0xFFFFFFFD",
         "cpsie	i",
@@ -256,7 +248,7 @@ pub unsafe extern "C" fn PendSV() {
 
 
 
-pub(crate) fn idle_task(_task: &mut dyn crate::kernel::tasks::Process) -> ! {
+pub(crate) fn idle_task(_task: &mut crate::kernel::tasks::TCB) -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -290,7 +282,7 @@ impl<'p> Kernel<'p> {
             "ldr    r3, [r2]",        // Get value of StackPointer
             "ldmfd  r3!, {{r4-r11}}", // Load Context
             "str    r3, [r2]",        // Saves new Stackpointer value in &PCB
-            "msr	psp, r3",         // Moves r0 in PSP
+            "msr	psp, r3",         // Moves r3 in PSP
             "isb",
             /* Ritorno al thread, con PSP e in modo non privilegiato */
             "ldr    lr, =0xFFFFFFFD",
@@ -302,10 +294,10 @@ impl<'p> Kernel<'p> {
 
     #[no_mangle]
     #[inline(always)]
-    unsafe extern "C" fn switch_to_next<'k>(&mut self, sp: &'k mut StackPointer) -> &Self {
+    unsafe extern "C" fn switch_to_next<'k>(&mut self, sp: &'k mut Stack) -> &Self {
         sp.update_watermark();
         self.running = self.next;
-        self.next = None;
+        self.next = core::mem::MaybeUninit::zeroed();
         self
     }
 
@@ -314,7 +306,7 @@ impl<'p> Kernel<'p> {
         let val: usize;
         unsafe {
             asm!(
-                "msr    CONTROL, {out}",
+                "mrs    {out}, CONTROL",
                 out = out(reg) val,
             );
             val.into()

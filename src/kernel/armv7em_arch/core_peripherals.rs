@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use crate::{kernel::ExecContext, peripherals::Peripheral};
+use crate::peripherals::Peripheral;
 
 crate::make_peripheral!(SysTickTimer: 0xE000_E010);
 crate::make_peripheral!(NVIC: 0xE000_E100);
