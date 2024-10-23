@@ -2,11 +2,12 @@ pub(crate) mod core_peripherals;
 
 use core::arch::asm;
 
-use crate::kernel::tasks::{Kernel, KERNEL};
-use crate::kernel::tasks::Stack;
+use crate::kernel::{Kernel, KERNEL};
+use crate::kernel::Stack;
 use crate::kernel::SysCallType;
 use crate::kernel::CritSect;
 
+use super::TCB;
 use super::ExecContext;
 
 const SCB_ICSR_PENDSVSET: usize = 1 << 28;
@@ -191,7 +192,6 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
         // Ottiene la &Process running
         "ldr    r3, =KERNEL",
         "ldr    r2, [r3, #0]",
-        "ldr    r3, [r3, #4]",
 
         "mov    r0, lr",
         "mrs    r1, CONTROL",       // Test se siamo in contesto privilegiato o in thread
@@ -213,7 +213,7 @@ pub unsafe extern "C" fn HardFaultTrampoline() {
 pub unsafe extern "C" fn PendSV() {
     asm!(
         // r0: &Scheduler
-        // r1: &dyn Process
+        // r1: &Task
         // r2: Start Stack Pointer/Watermark
         // r3: value of StackPointers
 
@@ -222,18 +222,17 @@ pub unsafe extern "C" fn PendSV() {
         "mrs    r3, psp",           // Take PSP value out to r3
         "stmfd  r3!, {{r4-r11}}",   // Save Context
         "ldr    r0, =KERNEL",       // Get &Scheduler
-        "ldr    r1, [r0, #0]",      // Get running &dyn Process to switch out
-        "str	r3, [r1]",          // Save PSP value in &StackPointer (same as &dyn Process)
+        "ldr    r1, [r0, #0]",      // Get running &Task to switch out
+        "str	r3, [r1]",          // Save PSP value in &StackPointer (same as &Task)
         
         /* Caricamento del nuovo contesto */
         "bl     switch_to_next",
         
         // Carica la nuova stack
-        //"ldr    r0, =KERNEL",       // Get &Scheduler
-        "ldr    r1, [r0, #0]",      // Get running &dyn Process' StackPointer to switch out
+        "ldr    r1, [r0, #0]",      // Get running &Task' StackPointer to switch out
         "ldr    r3, [r1]",          // Get value of StackPointer
         "ldmfd  r3!, {{r4-r11}}",   // Load Context
-        "str    r3, [r1]",          // Saves new StackPointer value in &dyn Process
+        "str    r3, [r1]",          // Saves new StackPointer value in &Task
         "msr	psp, r3",           // Moves StackPointer in PSP
         // Instruction Syncro Barrier per sicurezza
         "isb",
@@ -248,7 +247,7 @@ pub unsafe extern "C" fn PendSV() {
 
 
 
-pub(crate) fn idle_task(_task: &mut crate::kernel::tasks::TCB) -> ! {
+pub(crate) fn idle_task(_task: &mut crate::kernel::TCB) -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -272,14 +271,13 @@ impl<'p> Kernel<'p> {
 
     #[naked]
     #[no_mangle]
-    pub(crate) unsafe extern "C" fn load_first_process(&self) -> ! {
+    pub(crate) unsafe extern "C" fn start_task(&self, tcb: &TCB) -> ! {
         asm!(
             // R0: &Scheduler - dovuto alle AAPCS
-            // R2: &dyn Process, running or next
+            // R1: &Task to run
             // R3: value of StackPointers, running or next
             /* Caricamento del nuovo contesto */
-            "ldr    r2, [r0, #0]",    // Get &PCB's StackPointer to run
-            "ldr    r3, [r2]",        // Get value of StackPointer
+            "ldr    r3, [r1]",        // Get value of StackPointer
             "ldmfd  r3!, {{r4-r11}}", // Load Context
             "str    r3, [r2]",        // Saves new Stackpointer value in &PCB
             "msr	psp, r3",         // Moves r3 in PSP

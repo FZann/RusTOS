@@ -2,34 +2,40 @@
 #![no_main]
 
 use RusTOS::kernel::utils::{Queue, Semaphore};
-use RusTOS::kernel::CritSect;
-use RusTOS::kernel::tasks::{KERNEL, TCB};
+use RusTOS::kernel::{CritCell, CritSect};
+use RusTOS::kernel::{KERNEL, TCB};
 use RusTOS::peripherals::gpio::GPIOA;
 use RusTOS::peripherals::Peripheral;
 
-//static SEM: CritCell<Semaphore> = CritCell::new(Semaphore::new());
-//static QUEUE: CritCell<Queue<u32, 1>> = CritCell::new(Queue::new());
+#[link_section = ".bss"]
+static CIAO_STACK: [usize; 128] = [0; 128];
+#[link_section = ".bss"]
+static BELLO_STACK: [usize; 128] = [0; 128];
+#[link_section = ".bss"]
+static SEM: CritCell<Semaphore> = CritCell::new(Semaphore::new());
+//static QUEUE: CritCell<Queue<u32, 16>> = CritCell::new(Queue::new());
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn OSEntry() -> ! {
     let cs = CritSect::activate();
-    let _ = KERNEL.get(&cs).new_task(ciao, 0, 128);
-    let _ = KERNEL.get(&cs).new_task(bello, 1, 128);
+    let _ = KERNEL.get(&cs).new_task(ciao, 0, &CIAO_STACK);
+    let _ = KERNEL.get(&cs).new_task(bello, 1, &BELLO_STACK);
     KERNEL.get(&cs).init(cs);
 }
+
 
 fn ciao(task: &mut TCB) -> ! {
     let mut c = 0usize;
     loop {
         c += 1;
-
         
-        //QUEUE.with(|queue| queue.push(task, c));
-        //SEM.with(|s| s.release());
+        //QUEUE.with(|queue| queue.push(task, c as u32));
+        SEM.with(|s| s.release());
         task.sleep(c as u64);
     }
 }
+
 
 fn bello(task: &mut TCB) -> ! {
     unsafe {
@@ -43,7 +49,7 @@ fn bello(task: &mut TCB) -> ! {
         
         let mut led_state = false;
         
-        /* 
+        /*
         core::arch::asm!(
             "ldr    r0, =ld_data",
             "str    r3, [r0]",
@@ -56,9 +62,9 @@ fn bello(task: &mut TCB) -> ! {
             //q.pop(task, &mut x);
             //led_state = x & 1 == 1;
 
-            //SEM.with(|s| s.wait(task));
+            SEM.with(|s| s.wait(task));
             led_state = !led_state;
-            task.sleep(500);
+            //task.sleep(500);
             match led_state {
                 true => GPIOA::regs().set_high(5),
                 false => GPIOA::regs().set_low(5),

@@ -1,10 +1,9 @@
 
 use core::cell::UnsafeCell;
 
-use crate::kernel::tasks::TCB;
+use crate::kernel::{KERNEL, TCB};
 use crate::bitvec::BitVec;
 
-use super::tasks::KERNEL;
 
 pub struct Semaphore {
     locked: BitVec,
@@ -110,22 +109,20 @@ where
         self.sem.release(); // Segnalazione per eventuali pop in attesa
     }
 
-    pub fn pop(&mut self, task: &TCB) -> T {
+    pub fn pop(&mut self, task: &TCB, object: &mut T) {
         // Andiamo in attesa col semaforo, perché la coda è vuota
         if self.buf[self.tail].is_none() {
             self.sem.wait(task);
         }
 
         // Unwrap non panica sicuramente, abbiamo fatto il test prima!
-        let result = self.buf[self.tail].take().unwrap();
+        *object = self.buf[self.tail].take().unwrap();
         self.tail += 1;
         if self.tail >= SIZE {
             self.tail = 0;
         }
         
         self.sem.release(); // Segnalazione per eventuali push in attesa
-
-        result
     }
 }
 

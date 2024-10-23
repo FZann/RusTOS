@@ -151,7 +151,7 @@ impl CorePeripherals {
     }
     
     pub(crate) fn sleep_on_exit(&self, sleep: bool) {
-        // TODO: implementa lo sleep-on-exit di ARM
+        self.scb.scr.sleep_on_exit(sleep);
     }
 }
 
@@ -318,5 +318,12 @@ impl SCB {
             bfar: Reg::new(),
             afsr: Reg::new(),
         }
+    }
+}
+
+impl Reg<0xE000ED10, RW> {
+    pub(crate) fn sleep_on_exit(&self, sleep: bool) {
+        let val = (sleep as usize) << 1;
+        self.write(val);
     }
 }

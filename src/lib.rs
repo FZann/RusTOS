@@ -9,7 +9,7 @@ pub mod bitvec;
 
 use core::panic::PanicInfo;
 
-use kernel::{tasks::{TCB, KERNEL}, ExceptionFrame, ExecContext};
+use kernel::{ExceptionFrame, ExecContext, KERNEL, TCB};
 
 #[panic_handler]
 pub fn panic_handler(_: &PanicInfo) -> ! {
@@ -24,12 +24,11 @@ fn OSFault(_frame: &ExceptionFrame, ctx: ExecContext, running: &mut TCB) {
         //panic!("From kernel!");
     };
 
-    // Reimpostiamo il task che ha dato rogne
-    running.setup();
+    running.stop();
 
     // Qui non possiamo essere interrotti: HardFault ha la massima priorità a livello HW
     // Quindi possiamo prendere la &mut del KERNEL senza CriticalSection
     unsafe { 
-        KERNEL.get_unsafe().load_first_process();
+        KERNEL.get_unsafe().schedule_next();
     };
 }
