@@ -5,6 +5,83 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "probe-rs-debug",
+            "request": "attach",
+            "name": "probe_rs Executable attach",
+            "cwd": "${workspaceFolder}",
+            "speed": 24000,
+            "connectUnderReset": true,
+            "chip": "STM32F334R8T6",
+            "coreConfigs": [
+              {
+                "coreIndex": 0,
+                "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+                "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd"
+              }
+            ],
+            "env": {
+              //!MODIFY (or remove)
+              // If you set this variable, check the VSCode console log window for the location of the log file.
+              "RUST_LOG": "info"
+            },
+            // Info, Debug
+            "consoleLogLevel": "Console"
+        },
+
+        {
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "name": "probe_rs Executable launch",
+            "cwd": "${workspaceFolder}",
+            "speed": 24000,
+            "runtimeExecutable": "probe-rs",
+            "runtimeArgs": ["dap-server"],
+            "connectUnderReset": true,
+            "chip": "STM32F334R8T6",
+            "flashingConfig": {
+                "flashingEnabled": true,
+                "haltAfterReset": false,
+                "formatOptions": {
+                "binaryFormat": "elf"
+                }
+            },
+            "coreConfigs": [
+                {
+                "coreIndex": 0,
+                "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+                "svdFile": "${workspaceRoot}/.vscode/STM32F3x4.svd"
+                }
+            ],
+            "env": {
+                //!MODIFY (or remove)
+                // If you set this variable, check the VSCode console log window for the location of the log file.
+                "RUST_LOG": "info"
+            },
+            // Info, Debug
+            "consoleLogLevel": "Console"
+        },
+
+        {
+            "preLaunchTask": "${defaultBuildTask}",
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "name": "probe-rs Test",
+            "cwd": "",
+            "connectUnderReset": true,
+            "chip": "STM32F334R8T6",
+            "flashingConfig": {
+                "flashingEnabled": true,
+                "haltAfterReset": true
+            },
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS"
+                }
+            ]
+        },
+
+        {
             /* Configuration for the STM32G474 Nucleo board */
             "type": "cortex-debug",
             "request": "launch",
@@ -33,6 +110,6 @@
                     { "type": "console", "label": "ITM", "port": 0 }
                 ]
             }
-        }
+        },
     ]
 }
