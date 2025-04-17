@@ -1,0 +1,86 @@
+{
+    // Usare IntelliSense per informazioni sui possibili attributi.
+    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "probe-rs-debug",
+            "request": "attach",
+            "name": "probe-rs-attach",
+            "cwd": "${workspaceFolder}",
+            "speed": 24000,
+            "connectUnderReset": true,
+            "chip": "STM32G431R8Tx",
+            "coreConfigs": [
+              {
+                "coreIndex": 0,
+                "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+                "svdFile": "${workspaceRoot}/.vscode/STM32G431xx.svd"
+              }
+            ],
+            "env": {
+              //!MODIFY (or remove)
+              // If you set this variable, check the VSCode console log window for the location of the log file.
+              "RUST_LOG": "info"
+            },
+            // Info, Debug
+            "consoleLogLevel": "Console"
+        },
+
+        {
+            "preLaunchTask": "${defaultBuildTask}",
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "name": "probe-rs-launch",
+            "cwd": "${workspaceFolder}",
+            "speed": 24000,
+            "runtimeExecutable": "probe-rs",
+            "runtimeArgs": ["dap-server"],
+            "connectUnderReset": true,
+            "chip": "STM32G431R8Tx",
+            "flashingConfig": {
+                "flashingEnabled": true,
+                "haltAfterReset": false,
+                "formatOptions": {
+                "binaryFormat": "elf"
+                }
+            },
+            "coreConfigs": [
+                {
+                "coreIndex": 0,
+                "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+                "svdFile": "${workspaceRoot}/.vscode/STM32G431xx.svd"
+                }
+            ],
+            "env": {
+                //!MODIFY (or remove)
+                // If you set this variable, check the VSCode console log window for the location of the log file.
+                "RUST_LOG": "info"
+            },
+            // Info, Debug
+            "consoleLogLevel": "Console"
+        },
+
+        {
+            "preLaunchTask": "${defaultBuildTask}",
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "name": "probe-rs-debug",
+            "cwd": "${workspaceRoot}",
+            "connectUnderReset": true,
+            "chip": "STM32G431R8Tx",
+            "flashingConfig": {
+                "flashingEnabled": true,
+                "haltAfterReset": true
+            },
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "./target/thumbv7em-none-eabihf/debug/RusTOS",
+                    "svdFile": "${workspaceRoot}/.vscode/STM32G431xx.svd",
+                }
+            ]
+        },
+    ]
+}

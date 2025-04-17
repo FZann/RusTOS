@@ -1,0 +1,58 @@
+[package]
+name = "rustos"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+embedded-hal = "1.0.0"
+paste = "1.0.15"
+
+[lib]
+name = "RusTOS"
+path = "src/lib.rs"
+
+[[bin]]
+name = "RusTOS"
+path = "src/bin.rs"
+
+[profile.dev]
+panic = "abort"
+opt-level = 0
+test = false
+bench = false
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+lto = true # better optimizations
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+
+
+####################################
+## FEATURES
+####################################
+[features]
+default = ["BitVec32", "g431", "cli", "timers_bursts"]
+
+###### MCUs chip selection ######
+g431 = ["stm32"]
+m0g3507 = ["mspm0"]
+
+###### MCUs architectures ######
+stm32 = []
+mspm0 = []
+
+###### OS Functionalities ######
+timers_bursts = ["timers"]
+timers = []
+cli = []
+clock_out = []
+
+###### Bit Vector Size ######
+BitVecUsize = []
+BitVec32 = []
+BitVec64 = []
+

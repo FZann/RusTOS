@@ -1,0 +1,1 @@
+const CANFD_ADR: usize = 0x4050_8000;

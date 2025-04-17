@@ -1,0 +1,9 @@
+[default.general]
+chip = "STM32G431R8Tx"
+
+# No need to set this again, other profiles inherit from the "default" profile
+#[with_rtt.general]
+#chip = "STM32G431R8Tx"
+
+[with_rtt.rtt]
+enabled = false
