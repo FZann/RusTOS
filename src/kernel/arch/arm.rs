@@ -381,7 +381,7 @@ extern "C" fn SVCall() {
     match syscall {
         SysCallType::Nop => (),
         SysCallType::StartScheduler => k.start(),
-        SysCallType::ContextSwith => k.core.scb.set_pendsv(),
+        SysCallType::ContextSwitch => k.core.scb.set_pendsv(),
     };
 }
 
@@ -458,7 +458,7 @@ impl Kernel {
             match sys_call {
                 SysCallType::Nop => (),
                 SysCallType::StartScheduler => asm!("svc    1"),
-                SysCallType::ContextSwith => asm!("svc  2"),
+                SysCallType::ContextSwitch => asm!("svc  2"),
             }
         }
     }
@@ -468,7 +468,7 @@ impl Kernel {
         if Kernel::get_context().is_privileged() {
             self.core.scb.set_pendsv();
         } else {
-            Kernel::SystemCall(SysCallType::ContextSwith);
+            Kernel::SystemCall(SysCallType::ContextSwitch);
         }
     }
 

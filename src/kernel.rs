@@ -51,7 +51,7 @@ pub(crate) union Vector {
 pub(crate) enum SysCallType {
     Nop,
     StartScheduler,
-    ContextSwith,
+    ContextSwitch,
 }
 
 
