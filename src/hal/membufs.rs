@@ -13,6 +13,8 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use core::ptr::NonNull;
+
 use crate::hal::dma::DmaStream;
 
 /// Ring buffer per data input con DMA connesso.
@@ -20,7 +22,7 @@ pub struct DMARingBuffer<const SIZE: usize> {
 	buff: [u8; SIZE],
     overflw: bool,
     read: usize,
-    dma: *mut dyn DmaStream,
+    dma: NonNull<dyn DmaStream>,
 }
 
 impl<const SIZE: usize> DMARingBuffer<SIZE> {
@@ -29,7 +31,7 @@ impl<const SIZE: usize> DMARingBuffer<SIZE> {
             buff: [0; SIZE],
             overflw: false,
             read: 0,
-            dma: dma as *const dyn DmaStream as *mut dyn DmaStream
+            dma: unsafe { NonNull::new_unchecked(dma as *const dyn DmaStream as *mut dyn DmaStream) },
         }
     }
 }
