@@ -163,9 +163,9 @@ make_port!(A: Gpio, GPIOA_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 
 make_port!(B: Gpio, GPIOB_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 make_port!(C: Gpio, GPIOC_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 make_port!(D: Gpio, GPIOD_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-make_port!(E: Gpio, GPIOD_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-make_port!(F: Gpio, GPIOD_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-make_port!(G: Gpio, GPIOD_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+make_port!(E: Gpio, GPIOE_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+make_port!(F: Gpio, GPIOF_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+make_port!(G: Gpio, GPIOG_ADR => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 
 create_gpio!(PORTA: 0);
 create_gpio!(PORTB: 1);
