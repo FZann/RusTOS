@@ -15,7 +15,7 @@
 
 
 
-/// Link utile per lo sviluppo: https://unserver.xyz/modbus-guide/
+/// Useful link to aid development: https://unserver.xyz/modbus-guide/
 /// [Modbus over Serial Line Specification and Implementation Guide V1.02](http://modbus.org/docs/Modbus_over_serial_line_V1_02.pdf), page 13
 /// "The maximum size of a Modbus RTU frame is 256 bytes."
 

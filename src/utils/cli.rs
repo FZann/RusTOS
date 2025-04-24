@@ -16,12 +16,12 @@
 /*
  * *************** COMMAND LINE INTERFACE ***************
  * 
- * Interfaccia Seriale (UART, USB, SPI...) per il controllo di RusTOS
+ * Serial Interface (UART, USB, SPI...) to control RusTOS
  *
- * Il modulo esporta il task della console e include tutte le
- * funzionalità necessarie per la gestione dei comandi.
+ * This module exports console's task and includes all 
+ * functionality to handle commands.
  * 
- * TODO: task table accessibile da console
+ * TODO: task table visible from console
  * 
  */
 

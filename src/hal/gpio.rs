@@ -167,8 +167,8 @@ pub(crate) trait GpioPort: Peripheral {
 }
 
 pub trait Pin {
-    /// Il fatto che GpioPort sia privato alla crate è voluto
-    /// L'utente non deve accedere alla porta direttamente, ma deve usare i Pin
+    /// GpioPort being private is voluntary
+    /// User should not access gpio port directly, but should use Pins
     #[allow(private_bounds)]
     type Port: GpioPort;
 

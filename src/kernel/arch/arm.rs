@@ -26,8 +26,8 @@ use crate::kernel::Vector;
 use crate::kernel::{Kernel, KERNEL};
 use crate::kernel::registers::*;
 
-/// Stack frame hardware salvata dai Cortex-M
-/// Permette di visualizzare i valori dei registri durante l'ultimo errore
+/// Stack frame hardware saved by Cortex-M CPUs
+/// Permits to visualize register values before last exception
 #[repr(C)]
 pub struct ExceptionFrame {
     r0: u32,
@@ -40,6 +40,7 @@ pub struct ExceptionFrame {
     xpsr: u32,
 }
 
+/// TODO: use this to save Task context inside TCB
 pub struct CpuContext {
     r4: u32,
     r5: u32,
@@ -66,6 +67,7 @@ impl CpuContext {
     }
 }
 
+/// TODO: use this to save Task context inside TCB
 pub struct FpuContext {
     s0: u32,
     s1: u32,
@@ -140,14 +142,14 @@ impl FpuContext {
     }
 }
 
-
+/// TODO: use this to save Task context inside TCB
 pub struct MpuContext {
     s0: u32,
 }
 
 
 //*********************************************************************************************************************
-// SEZIONE VETTORI EXCEPTIONS CPU
+// EXCEPTIONS CPU VECTORS
 //*********************************************************************************************************************
 #[derive(Clone, Copy)]
 pub enum Exceptions {
@@ -387,8 +389,8 @@ unsafe extern "C" fn SecureFault() {
     );
 }
 
-/// Siamo al massimo possibile della priorità dell'NVIC. 
-/// Questo codice non può essere interrotto da nulla.
+
+/// We are at maximum of NVIC priority, this code can't be interrupted at all.
 #[no_mangle]
 #[allow(non_snake_case)]
 extern "C" fn SVCall() {
@@ -434,7 +436,7 @@ extern "C" fn SysTick() {
 }
 
 //***************************************************************************************************************
-// SEZIONE KERNEL
+// KERNEL ASSEMBLY
 //***************************************************************************************************************
 impl Kernel {
     #[inline(always)]
@@ -492,7 +494,7 @@ impl Kernel {
     pub(crate) unsafe fn start_task(task: &Task, _cs: CritSect) -> ! {
         task.load_context();
         asm!(
-            /* Ritorno al thread, con PSP e in modo non privilegiato */
+            // Going back to thread, using PSP and in non-privileged mode
             "ldr    lr, =0xFFFFFFFD",
             "cpsie	i",
             "bx     lr",
@@ -519,7 +521,7 @@ impl Task {
         let stack = unsafe { &mut *(self.stack as *mut [usize]) };
         let len = stack.len();
 
-        stack[len - 01] = 1 << 24; // xPSR - Thumb state attivo
+        stack[len - 01] = 1 << 24; // xPSR - Thumb state active
         stack[len - 02] = self.task as usize; // PC
         stack[len - 03] = 0xFFFFFFFD; // LR
         stack[len - 04] = 0xC; // R12
@@ -528,7 +530,7 @@ impl Task {
         stack[len - 07] = 0x1; // R1
         stack[len - 08] = pointer; // R0
 
-        // Software stack; non è strettamente necessaria, serve più per debug
+        // Software stack; this is not strictly necessary, but it is useful for debugging
         stack[len - 09] = 0xB; // R11
         stack[len - 10] = 0xA; // R10
         stack[len - 11] = 0x9; // R9
@@ -592,6 +594,10 @@ impl Task {
     }
 
 }
+
+//***************************************************************************************************************
+// CORE PERIPHERALS
+//***************************************************************************************************************
 
 pub enum ClockSource {
     ExternalClock = 0,

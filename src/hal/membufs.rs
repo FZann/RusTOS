@@ -17,7 +17,7 @@ use core::ptr::NonNull;
 
 use crate::hal::dma::DmaStream;
 
-/// Ring buffer per data input con DMA connesso.
+/// Ring buffer to read data with DMA
 pub struct DMARingBuffer<const SIZE: usize> {
 	buff: [u8; SIZE],
     overflw: bool,

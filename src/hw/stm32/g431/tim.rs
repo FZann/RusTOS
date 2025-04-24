@@ -20,10 +20,10 @@ use super::{rcc::*, CPU_FREQUENCY};
 
 
 //*********************************************************************************************************************
-// DICHIARAZIONE VARIABILI CONNESSE ALL'HW
+// HW-CONNECTED VARIABLES
 //*********************************************************************************************************************
 
-//********************* INDIRIZZI *************************
+//********************* ADDRESSES *************************
 const TIM1_ADR: usize = 0x4001_2C00;
 const TIM2_ADR: usize = 0x4000_0000;
 const TIM3_ADR: usize = 0x4000_0400;
@@ -128,7 +128,7 @@ const EGR_TG: usize = 1 << 6;
 const EGR_BG: usize = 1 << 7;
 const EGR_B2G: usize = 1 << 8;
 
-// Bit Masks per gli INPUT CAPTURE
+// Bit Masks for INPUT CAPTURE
 const CCMR_CC1S_MASK: usize = 0b11;
 const CCMR_CC2S_MASK: usize = 0b11_0000_0000;
 const CCMR1_CC1S: usize = 1 << 0;
@@ -145,17 +145,17 @@ const CCMR2_CC4S: usize = 1 << 8;
 const CCMR2_IC4PSC: usize = 1 << 10;
 const CCMR2_IC4F: usize = 1 << 12;
 
-// Bit Masks per gli OUTPUT COMPARE
+// Bit Masks for OUTPUT COMPARE
 const CCMR_OC1M_MASK: usize = 0x00010070;
 const CCMR_OC1M_SHIFT: usize = 4;
 const CCMR_OC2M_MASK: usize = 0x01007000;
 const CCMR_OC2M_SHIFT: usize = 12;
-//const CCMR1_CC1S: usize = 1 << 0;     // Stessi bits dell'IC
+//const CCMR1_CC1S: usize = 1 << 0;     // Same bits as IC
 const CCMR1_OC1FE: usize = 1 << 2;
 const CCMR1_OC1PE: usize = 1 << 3;
 const CCMR1_OC1M: usize = 1 << 4;
 const CCMR1_OC1CE: usize = 1 << 7;
-//const CCMR1_CC2S: usize = 1 << 8;     // Stessi bits dell'IC
+//const CCMR1_CC2S: usize = 1 << 8;     // Same bits as IC
 const CCMR1_OC2FE: usize = 1 << 10;
 const CCMR1_OC2PE: usize = 1 << 11;
 const CCMR1_OC2M: usize = 1 << 12;
@@ -163,12 +163,12 @@ const CCMR1_OC2CE: usize = 1 << 15;
 const CCMR1_OC1M_2: usize = 1 << 16;
 const CCMR1_OC2M_2: usize = 1 << 24;
 
-//const CCMR1_CC1S: usize = 1 << 0;     // Stessi bits dell'IC
+//const CCMR1_CC1S: usize = 1 << 0;     // Same bits as IC
 const CCMR2_OC3FE: usize = 1 << 2;
 const CCMR2_OC3PE: usize = 1 << 3;
 const CCMR2_OC3M: usize = 1 << 4;
 const CCMR2_OC3CE: usize = 1 << 7;
-//const CCMR1_CC2S: usize = 1 << 8;     // Stessi bits dell'IC
+//const CCMR1_CC2S: usize = 1 << 8;     // Same bits as IC
 const CCMR2_OC4FE: usize = 1 << 10;
 const CCMR2_OC4PE: usize = 1 << 11;
 const CCMR2_OC4M: usize = 1 << 12;
@@ -229,7 +229,7 @@ const CCER_CC6_SHIFT: usize = 20;
 const CCER_CC6_MASK: usize = 0b11 << CCER_CC6_SHIFT;
 
 //*********************************************************************************************************************
-// MACRO CREAZIONE TIMER
+// MACRO FOR TIMER CREATION
 //*********************************************************************************************************************
 macro_rules! make_timebase {
     ($TIM:ident: $regs:ident, $addr:expr, $bits:ty, $dir:expr) => {
@@ -418,7 +418,7 @@ macro_rules! make_capturecompare {
 }
 
 //*********************************************************************************************************************
-// FUNZIONALITA' AGGIUNTIVE TIMER
+// TIMER ADDITIONAL FUNCTIONALITIES
 //*********************************************************************************************************************
 #[derive(Debug, Clone, Copy)]
 pub enum CompareMode {
@@ -517,11 +517,11 @@ impl ComplementaryMode {
 }
 
 //*********************************************************************************************************************
-// DICHIARAZIONE TIMER
+// TIMER DECLARATION
 //*********************************************************************************************************************
 
-/// Questi timer sono utilizzabili solamente come base dei tempi o per innescare interrupts.
-/// Non hanno canali di CC associati.
+/// Timers to be used for timebase purposes or to fire IRQs.
+/// They don't have associated CC channels.
 pub(crate) struct BasicTimer<const ADR: usize> {
     cr1: RW<ADR, 0x00>,
     cr2: RW<ADR, 0x04>,
@@ -546,8 +546,7 @@ impl ClockEnable for TIM7 {
     const CLK_EN_BUS: RccBus = RccBus::APB1_1;
 }
 
-/// Questi timer possono essere utilizzati anche a 32bits.
-/// TIM2/5 sono anche a 32bits, mentre TIM3/4 solo 16bits.
+/// TIM2/5 are 32bits, meanwhile TIM3/4 only 16bits.
 pub(crate) struct GPTimerType1<const ADR: usize> {
     cr1: RW<ADR, 0x000>,
     cr2: RW<ADR, 0x004>,
@@ -622,7 +621,7 @@ impl ClockEnable for TIM5 {
 }
 
 
-/// Questi timer hanno un buon ventaglio di funzionalità, ma pochi canali di CC.
+/// Timers with good amount of functionalities, but few CC channels.
 pub(crate) struct GPTimerType2<const ADR: usize> {
     cr1: RW<ADR, 0x000>,
     cr2: RW<ADR, 0x004>,
@@ -660,7 +659,7 @@ impl ClockEnable for TIM15 {
 }
 
 
-/// Questi timer hanno un buon ventaglio di funzionalità, ma pochi canali di CC.
+/// Timers with good amount of functionalities, but few CC channels.
 pub(crate) struct GPTimerType3<const ADR: usize> {
     cr1: RW<ADR, 0x000>,
     cr2: RW<ADR, 0x004>,
@@ -702,8 +701,7 @@ impl ClockEnable for TIM17 {
 }
 
 
-/// Questi timer sono i più completi, in grado di pilotare fino a 4 CC di I/O e 2 CC interni (per triggering vari).
-/// Hanno complesse gestioni del dead-time, breaking, e altre cose di questo tipo.
+/// Most advanced and feature-rich timers. They have 4 CC channels with IOs and 2 internal OC channels.
 pub(crate) struct AdvancedTimer<const ADR: usize> {
     cr1: RW<ADR, 0x000>,
     cr2: RW<ADR, 0x004>,

@@ -23,10 +23,10 @@ use super::rcc::*;
 
 
 //*********************************************************************************************************************
-// DICHIARAZIONE VARIABILI CONNESSE ALL'HW
+// HW-CONNECTED VARIABLES
 //*********************************************************************************************************************
 
-//********************* INDIRIZZI *************************
+//********************* ADDRESSES *************************
 const USART1_ADR: usize = 0x4001_3800;
 const USART2_ADR: usize = 0x4000_4400;
 const USART3_ADR: usize = 0x4000_4800;
@@ -57,7 +57,7 @@ const CR1_DEDT_POS: usize = 25;
 const CR1_M1: usize = 1 << 28;
 const CR1_FIFOEN: usize = 1 << 29;
 
-/// Half-duplex flag (solo pin TX - TRx tutta sullo stesso pin)
+/// Half-duplex flag (only pin TX - TRx on same pin)
 const CR2_HDSEL: usize = 1 << 3;
 const CR2_MSBFIRST: usize = 1 << 19;
 
@@ -71,7 +71,7 @@ const ISR_RXFF: usize = 1 << 24;
 
 
 //*********************************************************************************************************************
-// DICHIARAZIONE UART
+// UART DECLARATION
 //*********************************************************************************************************************
 
 pub(crate) struct UART<const ADR: usize> {

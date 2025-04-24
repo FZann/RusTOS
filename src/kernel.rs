@@ -13,10 +13,10 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! 
-//! **************************************** KERNEL OF RusTOS ****************************************
+//! ************************************************* KERNEL OF RusTOS ************************************************
 //! 
 //! This module is the heart of RusTOS, as it implements all foundamentals objects:
-//! Timers, Tasks, Kernel, Semaphores, Mutexes, Queues and Stream Buffers.
+//! Timers, Tasks, Kernel, Semaphores, Rendezvous, Mutexes, Queues and Stream Buffers.
 //! 
 //! Scheduling logic is implemented by Kernel struct with a couple of functions that interacts
 //! with an assembly code, specific for the CPU architecture which RusTOS will be run on.
@@ -24,6 +24,8 @@
 //! Static declaration of things was used as a foundamental development logic: RusTOS will statically
 //! allocate objects when is possible; dynamic allocation will be implemented, but will be used as
 //! last resource.
+//! 
+//! *******************************************************************************************************************
 
 mod arch;
 use arch::core::CorePeripherals;
@@ -47,7 +49,7 @@ use core::panic::PanicInfo;
 use core::ptr::NonNull;
 
 //*********************************************************************************************************************
-// SEZIONE DEFINIZIONE TIPI DATI
+// TYPES DEFINITION
 //*********************************************************************************************************************
 
 pub type TaskFn = fn(&mut Task) -> !;
@@ -99,9 +101,8 @@ impl ExecContext {
 }
 
 
-/// Token per l'abilitazione di una Critical Section
-/// Creare una CritSect disabilita gli interrupts,
-/// mentre il metodo Drop li riabilita
+/// Token to start a Critical Section
+/// Creating a CritSect disables all interrupts, meanwhile Drop methods re-enables them.
 #[must_use]
 pub struct CritSect;
 
@@ -123,11 +124,10 @@ impl Drop for CritSect {
 }
 
 
-/// Astrazione per rendere Sync-safe le shared globals.
-/// In questo modo possiamo accedere a delle static, renderle mutabili
-/// e accedere ai metodi mutabili.
-/// E' Sync-safe siccome siamo su un sistema mono-core. Disabilitando gli
-/// interrupt rende impossibile la modifica concorrenziale dei dati.
+/// Abstraction to make Sync-safe shared globals.
+/// This way we can have a mutable access to statics and use mutable APIs.
+/// This is Sync-safe as we are running on a single-core system.
+/// Disabling interrupts makes impossible to have a race-condition when modifing data.
 #[repr(transparent)]
 pub struct CriticalCell<T: Sized> {
     data: UnsafeCell<T>,
@@ -252,7 +252,7 @@ impl<T: ?Sized> NullablePtr<T> {
 
 
 //*********************************************************************************************************************
-// SEZIONE VARIABILI STATICHE E COSTANTI
+// STATICS AND CONSTANTS VARIABLES
 //*********************************************************************************************************************
 #[no_mangle]
 pub static KERNEL: CriticalCell<Kernel> = CriticalCell::new(Kernel::new());
@@ -263,7 +263,7 @@ pub static mut IDLE_TASK: Task = Task::new(idle_task, IDLE_PRIO, &IDLE_STACK);
 
 
 //*********************************************************************************************************************
-// SEZIONE FUNZIONI DEL SISTEMA OPERATIVO
+// OPERATING SYSTEM FUNCTIONS
 //*********************************************************************************************************************
 
 pub(crate) fn idle_task(_task: &mut Task) -> ! {
@@ -324,7 +324,7 @@ fn OSSecureFault(_frame: &ExceptionFrame, running: &mut Task) {
 }
 
 //*********************************************************************************************************************
-// SEZIONE STACK E TCB
+// STACK AND TASK (TCB)
 //*********************************************************************************************************************
 
 /// La Cell qui è utilizzata semplicemente per impedire al compilatore/linker di spostare
@@ -519,14 +519,14 @@ impl TaskList {
     }
 
     fn setup(&mut self) {
-        // Setup di tutti i task che sono stati inseriti
+        // Setup of all inserted tasks
         for prio in self.used.into_iter() {
             self.get_ref_mut(prio).setup();
         }
     }
 
     fn tick_sleeping(&mut self) {
-        // NOTA: qui si potrebbero usare delle SIMD?
+        // NOTE: could we use SIMD here?
         for id in self.sleeping.into_iter() {
             self.sleep_time[id] -= 1;
             if self.sleep_time[id] == 0 {
@@ -543,7 +543,7 @@ impl TaskList {
 
 
 //*********************************************************************************************************************
-// SEZIONE TIMER SOFTWARE
+// SOFTWARE TIMERS
 //*********************************************************************************************************************
 
 #[cfg(feature = "timers")]
@@ -728,24 +728,23 @@ impl TimerList {
 
 
 //*********************************************************************************************************************
-// SEZIONE KERNEL
+// KERNEL
 //*********************************************************************************************************************
 
-/// Lo Scheduler tiene in memoria anche le variabili che servono per completare
-/// un context switch. In questo modo evito di usare una serie di unsafe per
-/// la modifica dei valori, perché non risultano statici allo scheduler stesso
+/// Scheduler keeps in memory variables used to complete context switching.
+/// This way we avoid using a series of 'unsafe' to modify static global data.
 pub struct Kernel {
     running: MaybeUninit<*const Task>,
     next: MaybeUninit<*const Task>,
     pub(crate) sys_call: SysCallType,
 
-    /// Ticks totali da quando il sistema è partito
+    /// Total system ticks till system started
     ticks: SystemTicks,
 
-    /// Periferiche del core
+    /// Core peripherals - depends on CPU HW
     core: CorePeripherals,
 
-    /// Lista processi
+    /// Process list
     tasks: TaskList,
 
     /// Timers list
@@ -776,15 +775,15 @@ impl Kernel {
 
     #[inline(always)]
     pub(crate) fn start(&mut self) -> ! {
-        // Setup delle periferiche core per far girare l'OS
+        // Setup of CPU core peripherals
         self.setup_clock();
 
         self.core.setup();
         self.tasks.setup();
 
-        /* Scheduling first process */
+        // Scheduling first process
         unsafe {
-            // Sequenza necessaria per evitare un warning del compilatore
+            // Sequence to avoid compiler warnings
             let idle = &raw mut IDLE_TASK;
             self.running.write(idle);
             (&mut *idle).setup();
@@ -793,7 +792,7 @@ impl Kernel {
             Kernel::start_task(self.running(), cs);
         }
 
-        /* Qui non dovremmo mai arrivare, in quanto la CPU è sotto controllo dello scheduler */
+        // We should nevere arrive here, as CPU is under Scheluder control
     }
 
     
@@ -853,7 +852,7 @@ impl Kernel {
 
     pub(crate) fn schedule_next(&mut self, cs: CritSect) {
         match (self.running().prio, self.tasks.next_waiting()) {
-            // Nuovo task da schedulare
+            // New task to be scheduled
             (run, Ok(next)) if next != run => {
                 self.next = MaybeUninit::new(self.tasks.get_ref(next));
                 //self.core.sleep_on_exit(false);
@@ -861,19 +860,19 @@ impl Kernel {
                 self.request_context_switch();
             }
 
-            // Non c'è nulla da fare: idle task
-            // Se è già in run l'idle task esce senza scambiare
+            // Nothing to do: idle task. If we are already running Idle Task, simply exit
             (run, Err(())) if run != IDLE_PRIO => {
-                // TODO: verificare quante periferiche si spengono con lo sleep/sleep_on_exit
 
-                //self.core.sleep_on_exit(true);    // <- Attivare bit e fare una SysCall::Sleep (!) per entrare in un handler dal quale fare sleep!
+                // TODO: verify if sleep_on_exit is usable
+                // Activate bit and make a SysCall::Sleep (!) to enter an handler to sleep!
+                //self.core.sleep_on_exit(true);    
 
                 self.next = MaybeUninit::new(&raw const IDLE_TASK);
                 cs.deactivate();
                 self.request_context_switch();
             }
 
-            // Stesso task da mandare avanti
+            // Same task to execute
             _ => {}
         }
     }
@@ -980,10 +979,10 @@ impl Rendezvous {
         }
     }
 
-    /// La funzione dovrebbe verificare quali processi sono già in attesa sul Rendezvous e sbloccare
-    /// quelli che non appartengono più alla nuova maschera....
-    /// Per ora scelgo di tenere una logica più improntata al "const setup" dei vari elementi...
-    /// Magari in futuro implementerò bene la funzione
+    /// Functions should check which Tasks are waiting for a Rendezvous and unlock those
+    /// that where left off this new mask... Rigth now we simply don't allow to modify
+    /// the mask, using more of a "const setup" logic.
+    /// Maybe in future we should implement all required logic to handle a mask change.
     /* pub */ fn set_mask(&self, mask: BitVec) {
         let cs = CritSect::activate();
         self.mask.write_raw(mask.raw());
@@ -1058,8 +1057,7 @@ impl<T> Mutex<T> {
 // SEZIONE DATASTREAM: CODE e STREAM BUFFERS
 //*********************************************************************************************************************
 
-/// Coda. L'implementazione sul passaggio dei dati by-value (copia) e non by-ref (puntatore/riferimento).
-/// 
+/// Queue. Data is passed by-copy and not by-reference.
 pub struct Queue<T: Sized + Copy, const SIZE: usize> {
     push: Semaphore,
     pop: Semaphore,
@@ -1264,7 +1262,7 @@ pub struct StreamBuffer<T: Sized + Copy, const SIZE: usize, const TRG: usize> {
     // Size = 20B + T * SIZE
 }
 
-/// Implemented because of Critical Sections used inside all methods
+/// Implemented because of Critical Sections used inside all methods.
 /// Critical Sections disallow any IRQ from firing, thus granting
 /// that no one could access internal fields meanwhile we have a
 /// shared access to them.
