@@ -467,6 +467,23 @@ impl Kernel {
         }
     }
 
+    /// To implement SysCalls with arguments and return values, we should
+    /// add CpuContext to TCB before, as that is foundamental to have!
+    /// To make arguments, we must save Task state and then we could assing regs 
+    /// to syscall's arguments.
+    /// To make return values, we must restore state and the assign regs to 
+    /// syscall's return values; otherwise we could modify task's saved state
+    /// directly, and then do a simple context restore.
+    /// SysCalls should be at higher priority than other things (beside other exceptions)
+    /// to be sure an other ISR do not interfere with arguments/return registers.
+    /// SysCalls could be implemented... but: are they useful?
+    /// A project's objective is to have HW SysCalls, but I am thinking hard about that:
+    /// HW is readily accessible from Non-Privileged context, so why have SysCall?
+    /// We could have driver tasks that R/W directly into peripheral memory without SysCalls.
+    /// Perhaps we could implement a "Driver Task List" into the Kernel and parse that before
+    /// users tasks... so user could implement its drivers, but in a predefined way.
+    /// Don't know. Many things to study and be aware of.
+    /// Best thing is to try and see what is it's outcome.
     #[inline(always)]
     #[allow(non_snake_case)]
     pub(crate) fn SystemCall(sys_call: SysCallType) {
