@@ -271,7 +271,7 @@ static __ARM_VECTORS: [Vector; 15] = [
     Vector { handler: SysTick },
 ];
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe extern "C" fn __ENTRY() {
@@ -315,7 +315,7 @@ extern "C" fn NonMaskableInt() {
     }
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe extern "C" fn HardFault() {
@@ -329,7 +329,7 @@ unsafe extern "C" fn HardFault() {
     );
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[cfg(not(armv6m))]
 #[allow(non_snake_case)]
@@ -344,7 +344,7 @@ unsafe extern "C" fn MemoryManagement() {
     );
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[cfg(not(armv6m))]
 #[allow(non_snake_case)]
@@ -359,7 +359,7 @@ unsafe extern "C" fn BusFault() {
     );
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[cfg(not(armv6m))]
 #[allow(non_snake_case)]
@@ -374,7 +374,7 @@ unsafe extern "C" fn UsageFault() {
     );
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[cfg(armv8m)]
 #[allow(non_snake_case)]
@@ -411,7 +411,7 @@ extern "C" fn DebugMonitor() {
     }
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe extern "C" fn PendSV() {
@@ -471,7 +471,7 @@ impl Kernel {
     /// add CpuContext to TCB before, as that is foundamental to have!
     /// To make arguments, we must save Task state and then we could assing regs 
     /// to syscall's arguments.
-    /// To make return values, we must restore state and the assign regs to 
+    /// To make return values, we must restore state and then assign regs to 
     /// syscall's return values; otherwise we could modify task's saved state
     /// directly, and then do a simple context restore.
     /// SysCalls should be at higher priority than other things (beside other exceptions)
