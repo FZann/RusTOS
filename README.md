@@ -3,16 +3,14 @@
 Real Time OS in Rust
 
 
-RusTOS is a simple RTOS that have a fixed-priority scheduler, software timers, semaphores, rendezvous, mutexes and queues.
+RusTOS is a simple RTOS that have a fixed-priority scheduler, software timers, semaphores, rendezvous, mutexes, queues and stream buffers.
 It uses extensively bit vectors to handle tasks state, timers and other things.
-Bit Vectors allow for fast process scheduling by using a simple CLZ on ready tasks bit vector, keeps RAM usage low, 
-but limit tasks number to the bit vector size (32 bits word-size on Cortex-M).
+Bit Vectors allow for fast process scheduling by using a simple CLZ on ready tasks bit vector, keeps RAM usage low, but limit tasks number to the bit vector size (32 bits word-size on Cortex-M).
 
 ## Why RusTOS 
 
 I started RusTOS to learn how an RTOS works and to acquire more knoledge while working on it.
-This is far from being a production-ready OS, but it is simple enough to be a good learning spot to someone that is curious to
-know how an RTOS work.
+This is far from being a production-ready OS, but it is simple enough to be a good learning spot to someone that is curious to know how an RTOS work.
 
 ## Project's objectives
 
@@ -46,6 +44,14 @@ fn do_something() -> ! {
   }
 }
 ```
+
+### HW used to develop RusTOS
+
+I have used a NucleoG431 to make kernel switch context and to blink it's LED to see if everything worked.
+I have tested UART communication with a USB-UART bridge device and I was able to send and receive from Nucleo board.
+
+
+#### Credits
 
 Credits for ideas:
  - Harsark project for boolean vectors
