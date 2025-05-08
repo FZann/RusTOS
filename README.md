@@ -27,11 +27,12 @@ An allocator should be implemented.
 
 Project objectives are:
 - microkernel design
-- be able to run kernel on ARM, RISC-V and MIPS
+- be able to run kernel on ARM, RISC-V and MIPS (this is optional)
 - no idle process: cpu is put to sleep by the scheduler if there's no more to do
 - dynamic memory allocation available
 - software timers, to handle lightweight tasks, be they repetitive, counted, burst, or one-shot
 - create an HAL that takes advantage of the underlying OS syncronization for peripheral access
+- ```embedded-hal``` compatibility across all peripherals
 - be able to run on multiple MCUs with complete (or quasi complete) peripheral access
 - drivers implemented as separated tasks that control peripherals
 - have some of the most used protocol stacks, to simplify these communications start-up
