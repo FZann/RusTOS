@@ -892,14 +892,6 @@ impl Kernel {
     }
 }
 
-impl CriticalCell<Kernel> {
-    pub fn init_os(&self, f: impl Fn(&mut Kernel, &CritSect)) -> ! {
-        let cs = CritSect::activate();
-        f(self.access(&cs), &cs);
-        self.access(&cs).init(cs);
-    }
-}
-
 //*********************************************************************************************************************
 // SEMAPHORES, RENDEZVOUS and MUTEXes
 //*********************************************************************************************************************
@@ -1259,7 +1251,7 @@ pub struct StreamBuffer<T: Sized + Copy, const SIZE: usize, const TRG: usize> {
     head: Cell<usize>,
     tail: Cell<usize>,
     cnt: Cell<usize>,
-	buff: [Cell<MaybeUninit<T>>; SIZE],
+    buff: [Cell<MaybeUninit<T>>; SIZE],
 
     // Size = 20B + T * SIZE
 }
