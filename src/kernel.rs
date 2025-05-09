@@ -327,8 +327,8 @@ fn OSSecureFault(_frame: &ExceptionFrame, running: &mut Task) {
 // STACK AND TASK (TCB)
 //*********************************************************************************************************************
 
-/// La Cell qui è utilizzata semplicemente per impedire al compilatore/linker di spostare
-/// in FLASH la Stack, ma impone di tenerla in RAM, a causa della mutabilità interna (fittizia).
+/// This Cell struct is used to avoid compiler to put a Stack into FLASH memory, but
+/// forcing it to keep Stack into RAM due to internal mutability (even with a zero-sized field).
 pub struct Stack<const WORDS: usize> {
     buff: [usize; WORDS],
     cell: Cell<PhantomData<usize>>,
@@ -366,6 +366,8 @@ pub struct Task {
     semaphore: NullablePtr<Semaphore>,
 
     ram_allocation: Cell<PhantomData<*const usize>>,
+
+    // TODO: implement the use of these contexts
 
     //context: CpuContext,
     //fpu: FpuContext,
@@ -899,7 +901,7 @@ impl CriticalCell<Kernel> {
 }
 
 //*********************************************************************************************************************
-// SEZIONE SEMAFORI, RENDEZVOUS e MUTEX
+// SEMAPHORES, RENDEZVOUS and MUTEXes
 //*********************************************************************************************************************
 
 #[derive(Debug)]
@@ -998,7 +1000,7 @@ impl Rendezvous {
             for task_id in self.arrived.into_iter() {
                 KERNEL.access(&cs).tasks.idle(task_id);
             }
-            // Tutti arrivati, svuota il BitVec
+            // All arrived, empty the BitVec
             self.arrived.reset();
             KERNEL.access(&cs).schedule_next(cs);
         } else {
@@ -1054,7 +1056,7 @@ impl<T> Mutex<T> {
 
 
 //*********************************************************************************************************************
-// SEZIONE DATASTREAM: CODE e STREAM BUFFERS
+// DATASTREAM: QUEUES and STREAM BUFFERS
 //*********************************************************************************************************************
 
 /// Queue. Data is passed by-copy and not by-reference.
