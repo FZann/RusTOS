@@ -56,3 +56,12 @@ I have tested UART communication with a USB-UART bridge device and I was able to
 Credits for ideas:
  - Harsark project for boolean vectors
  - RTIC project for process declaration with macros
+
+
+## Support me
+
+To help me make RusTOS grow, please consider to make a donation.
+
+![Donate](/qrcode.png?raw=true "Paypal QR Code for donation").
+
+
