@@ -38,9 +38,18 @@ pub struct ExceptionFrame {
     lr: u32,
     pc: u32,
     xpsr: u32,
+
+    #[cfg(feature = "fpu_enabled")]
+    fpu_regs: [u32; 16],
+    #[cfg(feature = "fpu_enabled")]
+    fpscr: u32,
+    #[cfg(feature = "fpu_enabled")]
+    reserved: u32,
 }
 
 /// TODO: use this to save Task context inside TCB
+#[derive(Debug)]
+#[repr(C)]
 pub struct CpuContext {
     r4: u32,
     r5: u32,
@@ -50,6 +59,7 @@ pub struct CpuContext {
     r9: u32,
     r10: u32,
     r11: u32,
+    sp: u32,
 }
 
 impl CpuContext {
@@ -63,28 +73,65 @@ impl CpuContext {
             r9: 9,
             r10: 10,
             r11: 11,
+            sp : 0,
         }
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn save(&self) {
+        #[cfg(armv6m)]
+        asm!(
+            "stm    {0}, {{r4-r7}}",
+            "mov    r4, r8",
+            "mov    r5, r9",
+            "mov    r6, r10",
+            "mov    r7, r11",
+            "stm    {1}, {{r4-r7}}",
+            "mrs    r1, psp",
+            "str    r1, [{2}]",
+            in(reg) &self.r4,
+            in(reg) &self.r8,
+            in(reg) &self.sp,
+        );
+        #[cfg(not(armv6m))]
+        asm!(
+            "stm    {0}, {{r4-r11}}",
+            "mrs    r1, psp",
+            "str    r1, [{1}]",
+            in(reg) &self.r4,
+            in(reg) &self.sp,
+        );
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn load(&self) {
+        #[cfg(armv6m)]
+        asm!(
+            "ldm    {0}, {{r4-r7}}",
+            "mov    r8, r4",
+            "mov    r9, r5",
+            "mov    r10, r6",
+            "mov    r11, r7",
+            "ldm    {1}, {{r4-r7}}",
+            "ldr    r1, [{2}]",
+            "msr    r1, psp",
+            in(reg) &self.r8,
+            in(reg) &self.r4,
+            in(reg) &self.sp,
+        );
+        #[cfg(not(armv6m))]
+        asm!(
+            "ldm    {0}, {{r4-r11}}",
+            "ldr    r1, [{1}]",
+            "msr    r1, psp",
+            in(reg) &self.r4,
+            in(reg) &self.sp,
+        );
     }
 }
 
-/// TODO: use this to save Task context inside TCB
+#[cfg(feature = "fpu_enabled")]
 pub struct FpuContext {
-    s0: u32,
-    s1: u32,
-    s2: u32,
-    s3: u32,
-    s4: u32,
-    s5: u32,
-    s6: u32,
-    s7: u32,
-    s8: u32,
-    s9: u32,
-    s10: u32,
-    s11: u32,
-    s12: u32,
-    s13: u32,
-    s14: u32,
-    s15: u32,
     s16: u32,
     s17: u32,
     s18: u32,
@@ -103,25 +150,10 @@ pub struct FpuContext {
     s31: u32,
 }
 
+#[cfg(feature = "fpu_enabled")]
 impl FpuContext {
     pub const fn new() -> Self {
         Self {
-            s0: 0,
-            s1: 0,
-            s2: 0,
-            s3: 0,
-            s4: 0,
-            s5: 0,
-            s6: 0,
-            s7: 0,
-            s8: 0,
-            s9: 0,
-            s10: 0,
-            s11: 0,
-            s12: 0,
-            s13: 0,
-            s14: 0,
-            s15: 0,
             s16: 0,
             s17: 0,
             s18: 0,
@@ -142,7 +174,7 @@ impl FpuContext {
     }
 }
 
-/// TODO: use this to save Task context inside TCB
+#[cfg(feature = "mpu_enabled")]
 pub struct MpuContext {
     s0: u32,
 }

@@ -30,9 +30,14 @@
 mod arch;
 use arch::core::CorePeripherals;
 use arch::core::CpuContext;
+
+#[cfg(feature = "fpu_enabled")]
 use arch::core::FpuContext;
+
+#[cfg(feature = "mpu_enabled")]
 use arch::core::MpuContext;
-pub(crate) use arch::core::ExceptionFrame;
+
+use arch::core::ExceptionFrame;
 
 pub mod time;
 pub use time::*;
@@ -331,7 +336,7 @@ fn OSSecureFault(_frame: &ExceptionFrame, running: &mut Task) {
 /// forcing it to keep Stack into RAM due to internal mutability (even with a zero-sized field).
 pub struct Stack<const WORDS: usize> {
     buff: [usize; WORDS],
-    cell: Cell<PhantomData<usize>>,
+    ram_allocation: Cell<PhantomData<usize>>,
 }
 
 unsafe impl<const WORDS: usize> Sync for Stack<WORDS> {}
@@ -344,7 +349,7 @@ impl<const WORDS: usize> Stack<WORDS> {
 
         Self {
             buff: [0; WORDS],
-            cell: Cell::new(PhantomData),
+            ram_allocation: Cell::new(PhantomData),
         }
     }
 
@@ -365,13 +370,16 @@ pub struct Task {
     prio: usize,
     semaphore: NullablePtr<Semaphore>,
 
+    /// Forcing compiler to RAM-allocate this structure due to Cell presence
     ram_allocation: Cell<PhantomData<*const usize>>,
 
-    // TODO: implement the use of these contexts
+    context: CpuContext,
 
-    //context: CpuContext,
-    //fpu: FpuContext,
-    //mpu: MpuContext,
+    #[cfg(feature = "fpu_enabled")]
+    fpu: FpuContext,
+
+    #[cfg(feature = "mpu_enabled")]
+    mpu: MpuContext,
 }
 
 /// Here as all is static and no one should modify ''stack: *const [usize]'' field
@@ -395,7 +403,7 @@ impl Task {
             
             ram_allocation: Cell::new(PhantomData),
             
-            //context: CpuContext::new(),
+            context: CpuContext::new(),
             //fpu: FpuContext::new(),
             //mpu: MpuContext::new(),
         }
@@ -794,7 +802,7 @@ impl Kernel {
             Kernel::start_task(self.running(), cs);
         }
 
-        // We should nevere arrive here, as CPU is under Scheluder control
+        // We should never arrive here, as CPU is under Scheluder control
     }
 
     
@@ -805,7 +813,7 @@ impl Kernel {
     
 
     #[inline]
-    pub const fn remove_process(&mut self, task: &'static Task) -> Result<(), ()> {
+    pub const fn remove_task(&mut self, task: &'static Task) -> Result<(), ()> {
         self.tasks.remove_task(task)
     }
 
@@ -989,9 +997,9 @@ impl Rendezvous {
         self.arrived.set(id);
         
         if self.arrived.superset_of(&self.mask) {
-            for task_id in self.arrived.into_iter() {
-                KERNEL.access(&cs).tasks.idle(task_id);
-            }
+            KERNEL.access(&cs).tasks.ready |= self.arrived.raw().into();
+            KERNEL.access(&cs).tasks.sleeping &= (!self.arrived.raw()).into();
+
             // All arrived, empty the BitVec
             self.arrived.reset();
             KERNEL.access(&cs).schedule_next(cs);

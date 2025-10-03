@@ -36,6 +36,8 @@ debug = true # symbols are nice and they don't increase the size on Flash
 ####################################
 [features]
 default = ["BitVec32", "g431", "cli", "timers_bursts"]
+fpu_enabled = []
+mpu_enabled = []
 
 ###### MCUs chip selection ######
 g431 = ["stm32"]
