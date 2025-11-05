@@ -75,6 +75,9 @@ pub(crate) enum SysCallType {
     Nop = 0,
     StartScheduler = 1,
     ContextSwitch = 2,
+    SetTaskIdle = 3,
+    SetTaskSleep = 4,
+    SetTaskStop = 5,
 }
 
 impl Into<SysCallType> for u32 {
@@ -82,6 +85,9 @@ impl Into<SysCallType> for u32 {
         match self {
             1 => SysCallType::StartScheduler,
             2 => SysCallType::ContextSwitch,
+            3 => SysCallType::SetTaskIdle,
+            4 => SysCallType::SetTaskSleep,
+            5 => SysCallType::SetTaskStop,
             _ => SysCallType::Nop,
         }
     }

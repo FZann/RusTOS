@@ -453,6 +453,9 @@ extern "C" fn SVCall() {
         SysCallType::Nop => (),
         SysCallType::StartScheduler => k.start(),
         SysCallType::ContextSwitch => k.core.scb.set_pendsv(),
+        SysCallType::SetTaskIdle => (),
+        SysCallType::SetTaskSleep => (),
+        SysCallType::SetTaskStop => (),
     };
 }
 
@@ -543,8 +546,11 @@ impl Kernel {
         unsafe {
             match sys_call {
                 SysCallType::Nop => (),
-                SysCallType::StartScheduler => asm!("svc    1"),
-                SysCallType::ContextSwitch => asm!("svc  2"),
+                SysCallType::StartScheduler =>  asm!("svc    1"),
+                SysCallType::ContextSwitch =>   asm!("svc    2"),
+                SysCallType::SetTaskIdle =>     asm!("svc    3"),
+                SysCallType::SetTaskSleep =>    asm!("svc    4"),
+                SysCallType::SetTaskStop =>     asm!("svc    5"),
             }
         }
     }
