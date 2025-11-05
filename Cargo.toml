@@ -35,7 +35,7 @@ debug = true        # symbols are nice and they don't increase the size on Flash
 ## FEATURES
 ####################################
 [features]
-default = ["BitVec32", "g431", "cli", "timers_bursts", "buffers_watermark"]
+default = ["BitVec32", "g431", "cli", "timers_bursts"]
 fpu_enabled = []
 mpu_enabled = []
 

@@ -60,6 +60,8 @@ pub struct CpuContext {
     r10: u32,
     r11: u32,
     sp: u32,
+    #[cfg(armv8m)]
+    psplim: u32,
 }
 
 impl CpuContext {
@@ -127,9 +129,16 @@ impl CpuContext {
             in(reg) &self.r4,
             in(reg) &self.sp,
         );
+        #[cfg(armv8m)]
+        asm!(
+            "ldr    r2, [{0}]",
+            "msr    r2, psplim",
+            in(reg) &self.psplim,
+        );
     }
 }
 
+#[cfg(has_fpu)]
 #[cfg(feature = "fpu_enabled")]
 pub struct FpuContext {
     s16: u32,
@@ -150,6 +159,7 @@ pub struct FpuContext {
     s31: u32,
 }
 
+#[cfg(has_fpu)]
 #[cfg(feature = "fpu_enabled")]
 impl FpuContext {
     pub const fn new() -> Self {
@@ -591,6 +601,11 @@ impl Task {
 
         self.sp = (&stack[len - 16] as *const usize) as usize;
         self.stack_start = (&stack[len - 01] as *const usize) as usize;
+        
+        #[cfg(armv8m)] 
+        {
+            self.context.psplim = self.stack as u32;
+        }
     }
 
     #[inline(always)]
