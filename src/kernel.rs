@@ -70,12 +70,22 @@ pub(crate) union Vector {
 
 
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
 pub(crate) enum SysCallType {
-    Nop,
-    StartScheduler,
-    ContextSwitch,
+    Nop = 0,
+    StartScheduler = 1,
+    ContextSwitch = 2,
 }
 
+impl Into<SysCallType> for u32 {
+    fn into(self) -> SysCallType {
+        match self {
+            1 => SysCallType::StartScheduler,
+            2 => SysCallType::ContextSwitch,
+            _ => SysCallType::Nop,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(PartialEq, Eq)]
@@ -746,7 +756,6 @@ impl TimerList {
 pub struct Kernel {
     running: MaybeUninit<*const Task>,
     next: MaybeUninit<*const Task>,
-    pub(crate) sys_call: SysCallType,
 
     /// Total system ticks till system started
     ticks: SystemTicks,
@@ -767,7 +776,6 @@ impl Kernel {
         Self {
             running: MaybeUninit::zeroed(),
             next: MaybeUninit::zeroed(),
-            sys_call: SysCallType::Nop,
             ticks: 0,
             core: CorePeripherals::new(),
             tasks: TaskList::new(),
@@ -805,12 +813,10 @@ impl Kernel {
         // We should never arrive here, as CPU is under Scheluder control
     }
 
-    
     #[inline]
     pub const fn add_task(&mut self, task: &'static Task) -> Result<(), ()> {
         self.tasks.add_task(task)
     }
-    
 
     #[inline]
     pub const fn remove_task(&mut self, task: &'static Task) -> Result<(), ()> {
@@ -890,12 +896,12 @@ impl Kernel {
     #[no_mangle]
     pub(crate) fn switch_to_next(&mut self) {
         unsafe {
-            self.running().save_context();
+            self.running().context.save();
             self.running_mut().update_watermark();
                     
             self.running = self.next;
             self.next = MaybeUninit::new(&raw const IDLE_TASK);
-            self.running().load_context();
+            self.running().context.load();
         }
     }
 }

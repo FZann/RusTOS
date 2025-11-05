@@ -76,6 +76,8 @@ impl CpuContext {
             r10: 10,
             r11: 11,
             sp : 0,
+            #[cfg(armv8m)]
+            psplim: 0,
         }
     }
 
@@ -436,8 +438,17 @@ unsafe extern "C" fn SecureFault() {
 #[no_mangle]
 #[allow(non_snake_case)]
 extern "C" fn SVCall() {
+    let frame: *const ExceptionFrame;
+    unsafe {
+        asm!(   
+            "mrs    {0}, PSP",
+            out(reg) frame,
+        );
+    }
+
+    let syscall: SysCallType = unsafe { ((*frame).pc & 0xFF).into() };
+
     let k = unsafe { KERNEL.access_unsafe() };
-    let syscall: SysCallType = k.sys_call;
     match syscall {
         SysCallType::Nop => (),
         SysCallType::StartScheduler => k.start(),
@@ -530,8 +541,6 @@ impl Kernel {
     #[allow(non_snake_case)]
     pub(crate) fn SystemCall(sys_call: SysCallType) {
         unsafe {
-            KERNEL.access_unsafe().sys_call = sys_call;
-    
             match sys_call {
                 SysCallType::Nop => (),
                 SysCallType::StartScheduler => asm!("svc    1"),
@@ -551,7 +560,7 @@ impl Kernel {
 
 
     pub(crate) unsafe fn start_task(task: &Task, _cs: CritSect) -> ! {
-        task.load_context();
+        task.context.load();
         asm!(
             // Going back to thread, using PSP and in non-privileged mode
             "ldr    lr, =0xFFFFFFFD",
