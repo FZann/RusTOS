@@ -16,7 +16,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(naked_functions)]
 #![allow(dead_code)]
 
 

@@ -1068,7 +1068,10 @@ pub struct Queue<T: Sized + Copy, const SIZE: usize> {
     cnt: Cell<usize>,
     buff: [Cell<MaybeUninit<T>>; SIZE],
 
-    // Size = 20B + T * SIZE
+    #[cfg(feature = "buffers_watermark")]
+    watermark: Cell<usize>,
+
+    // Size = 20B/24B + T * SIZE
 }
 
 /// Implemented because of Critical Sections used inside all methods
@@ -1102,6 +1105,9 @@ where
             tail: Cell::new(0),
             cnt: Cell::new(0),
             buff: [const { Cell::new(MaybeUninit::zeroed()) }; SIZE],
+
+            #[cfg(feature = "buffers_watermark")]
+            watermark: Cell::new(0),
         }
     }
 
@@ -1115,8 +1121,10 @@ where
         let mut end = self.head.get();
         self.buff[end].set(MaybeUninit::new(data));
         end += 1;
-        self.cnt.set(self.cnt.get() + 1);
-
+        self.cnt.update(|x| x + 1);
+        #[cfg(feature = "buffers_watermark")]
+        self.watermark.update(|w| w.max(self.cnt.get()));
+        
         if end >= SIZE {
             end = 0;
         }
@@ -1135,7 +1143,9 @@ where
         let mut end = self.head.get();
         self.buff[end].set(MaybeUninit::new(data));
         end += 1;
-        self.cnt.set(self.cnt.get() + 1);
+        self.cnt.update(|c| c + 1);
+        #[cfg(feature = "buffers_watermark")]
+        self.watermark.update(|w| w.max(self.cnt.get()));
 
         if end >= SIZE {
             end = 0;
@@ -1156,7 +1166,9 @@ where
         let mut end = self.head.get();
         self.buff[end].set(MaybeUninit::new(data));
         end += 1;
-        self.cnt.set(self.cnt.get() + 1);
+        self.cnt.update(|c| c + 1);
+        #[cfg(feature = "buffers_watermark")]
+        self.watermark.update(|w| w.max(self.cnt.get()));
 
         if end >= SIZE {
             end = 0;
@@ -1181,7 +1193,7 @@ where
             start = 0;
         }
         self.tail.set(start);
-        self.cnt.set(self.cnt.get() - 1);
+        self.cnt.update(|c| c - 1);
 
         self.push.release_cs(cs);
         res
@@ -1201,7 +1213,7 @@ where
             start = 0;
         }
         self.tail.set(start);
-        self.cnt.set(self.cnt.get() - 1);
+        self.cnt.update(|c| c - 1);
 
         self.push.release_cs(cs);
         Ok(res)
@@ -1221,7 +1233,7 @@ where
             start = 0;
         }
         self.tail.set(start);
-        self.cnt.set(self.cnt.get() - 1);
+        self.cnt.update(|c| c - 1);
 
         self.push.release_cs(cs);
         Some(res)
@@ -1231,6 +1243,13 @@ where
     #[inline]
     pub fn count(&self) -> usize {
         self.cnt.get()
+    }
+
+    #[cfg(feature = "buffers_watermark")]
+    /// Returns the maximum number of elements saved into Queue during its lifetime
+    #[inline]
+    pub fn watermark(&self) -> usize {
+        self.watermark.get()
     }
 
     /// Empty the Queue, resetting it to zero
@@ -1261,7 +1280,10 @@ pub struct StreamBuffer<T: Sized + Copy, const SIZE: usize, const TRG: usize> {
     cnt: Cell<usize>,
     buff: [Cell<MaybeUninit<T>>; SIZE],
 
-    // Size = 20B + T * SIZE
+    #[cfg(feature = "buffers_watermark")]
+    watermark: Cell<usize>,
+
+    // Size = 20B/24B + T * SIZE
 }
 
 /// Implemented because of Critical Sections used inside all methods.
@@ -1299,6 +1321,9 @@ where
             head: Cell::new(0),
             cnt: Cell::new(0),
             buff: [const { Cell::new(MaybeUninit::zeroed()) }; SIZE],
+
+            #[cfg(feature = "buffers_watermark")]
+            watermark: Cell::new(0),
         }
     }
 
@@ -1335,9 +1360,11 @@ where
                 }
                 self.head.set(wrapping);
             } else {
-                self.head.set(self.head.get() + writable);
+                self.head.update(|h| h + writable);
             }
-            self.cnt.set(self.cnt.get() + writable);
+            self.cnt.update(|c| c + writable);
+            #[cfg(feature = "buffers_watermark")]
+            self.watermark.update(|w| w.max(self.cnt.get()));
 
             // Updates total written with actual writable bytes.
             // Maybe [slice] is bigger than [space], so we must 
@@ -1388,9 +1415,11 @@ where
                 }
                 self.head.set(wrapping);
             } else {
-                self.head.set(self.head.get() + writable);
+                self.head.update(|h| h + writable);
             }
-            self.cnt.set(self.cnt.get() + writable);
+            self.cnt.update(|c| c + writable);
+            #[cfg(feature = "buffers_watermark")]
+            self.watermark.update(|w| w.max(self.cnt.get()));
 
             // Updates total written with actual writable bytes.
             // Maybe [slice] is bigger than [space], so we must 
@@ -1432,10 +1461,13 @@ where
             }
             self.head.set(wrapping);
         } else {
-            self.head.set(self.head.get() + writable);
+            self.head.update(|h| h + writable);
         }
 
-        self.cnt.set(self.cnt.get() + writable);
+        self.cnt.update(|c| c + writable);
+        #[cfg(feature = "buffers_watermark")]
+        self.watermark.update(|w| w.max(self.cnt.get()));
+
         if self.cnt.get() >= TRG {
             self.read.release_cs(cs);
         } else {
@@ -1561,6 +1593,13 @@ where
     #[inline]
     pub fn count(&self) -> usize {
         self.cnt.get()
+    }
+
+    #[cfg(feature = "buffers_watermark")]
+    /// Returns the maximum number of elements saved into Stream Buffer during its lifetime
+    #[inline]
+    pub fn watermark(&self) -> usize {
+        self.watermark.get()
     }
 
     /// Empty the Stream Buffer, resetting it to zero

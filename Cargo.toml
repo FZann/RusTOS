@@ -26,16 +26,16 @@ bench = false
 [profile.release]
 panic = "abort"
 opt-level = 3
-lto = true # better optimizations
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
+lto = true          # better optimizations
+codegen-units = 1   # better optimizations
+debug = true        # symbols are nice and they don't increase the size on Flash
 
 
 ####################################
 ## FEATURES
 ####################################
 [features]
-default = ["BitVec32", "g431", "cli", "timers_bursts"]
+default = ["BitVec32", "g431", "cli", "timers_bursts", "buffers_watermark"]
 fpu_enabled = []
 mpu_enabled = []
 
@@ -52,6 +52,7 @@ timers_bursts = ["timers"]
 timers = []
 cli = []
 clock_out = []
+buffers_watermark = []
 
 ###### Bit Vector Size ######
 BitVecUsize = []
