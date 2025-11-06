@@ -18,9 +18,9 @@ use core::arch::{asm, naked_asm};
 use core::marker::PhantomData;
 
 use crate::hw::CPU_FREQUENCY;
-use crate::kernel::Task;
+use crate::kernel::{self, SysCalls, Task};
 use crate::kernel::CritSect;
-use crate::kernel::SysCallType;
+use crate::kernel::SysCallID;
 use crate::kernel::ExecContext;
 use crate::kernel::Vector;
 use crate::kernel::{Kernel, KERNEL};
@@ -451,16 +451,17 @@ extern "C" fn SVCall() {
         );
     }
 
-    let syscall: SysCallType = unsafe { ((*frame).pc & 0xFF).into() };
+    // Extract syscall number from PC, as it is encoded as immediate into low byte of SVC instruction
+    let syscall: SysCallID = unsafe { ((*frame).pc & 0xFF).into() };
 
     let k = unsafe { KERNEL.access_unsafe() };
     match syscall {
-        SysCallType::Nop => (),
-        SysCallType::StartScheduler => k.start(),
-        SysCallType::ContextSwitch => k.core.scb.set_pendsv(),
-        SysCallType::SetTaskIdle => (),
-        SysCallType::SetTaskSleep => (),
-        SysCallType::SetTaskStop => (),
+        SysCallID::Nop => (),
+        SysCallID::StartScheduler => Kernel::start_task(k.running()),
+        SysCallID::ContextSwitch => k.core.scb.set_pendsv(),
+        SysCallID::SetTaskIdle => (),
+        SysCallID::SetTaskSleep => (),
+        SysCallID::SetTaskStop => (),
     };
 }
 
@@ -528,34 +529,31 @@ impl Kernel {
         }
     }
 
-    /// To implement SysCalls with arguments and return values, we should
-    /// add CpuContext to TCB before, as that is foundamental to have!
-    /// To make arguments, we must save Task state and then we could assing regs 
-    /// to syscall's arguments.
-    /// To make return values, we must restore state and then assign regs to 
-    /// syscall's return values; otherwise we could modify task's saved state
-    /// directly, and then do a simple context restore.
-    /// SysCalls should be at higher priority than other things (beside other exceptions)
-    /// to be sure an other ISR do not interfere with arguments/return registers.
-    /// SysCalls could be implemented... but: are they useful?
-    /// A project's objective is to have HW SysCalls, but I am thinking hard about that:
-    /// HW is readily accessible from Non-Privileged context, so why have SysCall?
-    /// We could have driver tasks that R/W directly into peripheral memory without SysCalls.
-    /// Perhaps we could implement a "Driver Task List" into the Kernel and parse that before
-    /// users tasks... so user could implement its drivers, but in a predefined way.
-    /// Don't know. Many things to study and be aware of.
-    /// Best thing is to try and see what is it's outcome.
+    #[inline(always)]
+    fn start_task(task: &Task) -> ! {
+        unsafe {
+            task.context.load();
+            asm!(
+                // Going back to thread, using PSP and in non-privileged mode
+                "ldr    lr, =0xFFFFFFFD",
+                "cpsie	i",
+                "bx     lr",
+                options(noreturn)
+            );
+        }
+    }
+
     #[inline(always)]
     #[allow(non_snake_case)]
-    pub(crate) fn SystemCall(sys_call: SysCallType) {
+    pub(crate) fn SystemCall(sys_call: SysCallID) {
         unsafe {
             match sys_call {
-                SysCallType::Nop => (),
-                SysCallType::StartScheduler =>  asm!("svc    1"),
-                SysCallType::ContextSwitch =>   asm!("svc    2"),
-                SysCallType::SetTaskIdle =>     asm!("svc    3"),
-                SysCallType::SetTaskSleep =>    asm!("svc    4"),
-                SysCallType::SetTaskStop =>     asm!("svc    5"),
+                SysCallID::Nop => (),
+                SysCallID::StartScheduler =>  asm!("svc    1"),
+                SysCallID::ContextSwitch =>   asm!("svc    2"),
+                SysCallID::SetTaskIdle =>     asm!("svc    3"),
+                SysCallID::SetTaskSleep =>    asm!("svc    4"),
+                SysCallID::SetTaskStop =>     asm!("svc    5"),
             }
         }
     }
@@ -565,20 +563,8 @@ impl Kernel {
         if Kernel::get_context().is_privileged() {
             self.core.scb.set_pendsv();
         } else {
-            Kernel::SystemCall(SysCallType::ContextSwitch);
+            Kernel::SystemCall(SysCallID::ContextSwitch);
         }
-    }
-
-
-    pub(crate) unsafe fn start_task(task: &Task, _cs: CritSect) -> ! {
-        task.context.load();
-        asm!(
-            // Going back to thread, using PSP and in non-privileged mode
-            "ldr    lr, =0xFFFFFFFD",
-            "cpsie	i",
-            "bx     lr",
-            options(noreturn)
-        );
     }
 
     #[inline(always)]
@@ -593,6 +579,59 @@ impl Kernel {
         }
     }
 }
+
+/// To implement SysCalls with arguments and return values, we should
+/// add CpuContext to TCB before, as that is foundamental to have!
+/// To make arguments, we must save Task state and then we could assing regs 
+/// to syscall's arguments.
+/// To make return values, we must restore state and then assign regs to 
+/// syscall's return values; otherwise we could modify task's saved state
+/// directly, and then do a simple context restore.
+/// SysCalls should be at higher priority than other things (beside other exceptions)
+/// to be sure an other ISR do not interfere with arguments/return registers.
+/// SysCalls could be implemented... but: are they useful?
+/// A project's objective is to have HW SysCalls, but I am thinking hard about that:
+/// HW is readily accessible from Non-Privileged context, so why have SysCall?
+/// We could have driver tasks that R/W directly into peripheral memory without SysCalls.
+/// Perhaps we could implement a "Driver Task List" into the Kernel and parse that before
+/// users tasks... so user could implement its drivers, but in a predefined way.
+/// Don't know. Many things to study and be aware of.
+/// Best thing is to try and see what is it's outcome.
+impl kernel::SysCall for Kernel {
+    #[inline(always)]
+    fn start_scheduler(task: &Task) -> ! {
+        unsafe { 
+            asm!(
+                "mov    r4, {0}",
+                "svc    1", 
+                in(reg) task as *const Task,
+                options(noreturn)
+            ); 
+        }   
+    }
+
+    #[inline(always)]
+    fn context_switch(_task: &Task) {
+        unsafe { asm!("svc    2", options(noreturn)); }
+    }
+
+    #[inline(always)]
+    fn set_task_idle(task: &Task) {
+
+    }
+
+    #[inline(always)]
+    fn set_task_sleep(task: &Task, ticks: kernel::Ticks) {
+
+    }
+
+    #[inline(always)]
+    fn set_task_stop(task: &Task) {
+
+    }
+
+}
+
 
 impl Task {
     pub(crate) fn setup(&mut self) {
@@ -627,56 +666,6 @@ impl Task {
             self.context.psplim = self.stack as u32;
         }
     }
-
-    #[inline(always)]
-    pub(crate) unsafe fn save_context(&self) {
-        #[cfg(armv6m)]
-        asm!(
-            "mrs    r3, psp",               // Take PSP value out to r3
-            "stmfd  r3!, {{r4-r7}}",        // Save Context
-            "mov    r4, r8",
-            "mov    r5, r9",
-            "mov    r6, r10",
-            "mov    r7, r11",
-            "stmfd  r3!, {{r4-r7}}",
-            "str	r3, [{0}]",             // Save PSP value in &StackPointer (same as &Task)
-            in(reg) &self.sp
-        );
-        #[cfg(not(armv6m))]
-        asm!(
-            "mrs    r3, psp",               // Take PSP value out to r3
-            "stmfd  r3!, {{r4-r11}}",       // Save Context
-            "str	r3, [{0}]",             // Save PSP value in &StackPointer (same as &Task)
-            in(reg) &self.sp
-        );
-    }
-
-    #[inline(always)]
-    pub(crate) unsafe fn load_context(&self) {
-        #[cfg(armv6m)]
-        asm!(
-            "ldr    r3, [{0}]",             // Get value of StackPointer
-            "ldmfd  r3!, {{r4-r7}}",        // Load Context
-            "mov    r11, r7",
-            "mov    r10, r6",
-            "mov    r9, r5",
-            "mov    r8, r4",
-            "ldmfd  r3!, {{r4-r7}}",       
-            "str    r3, [{0}]",             // Saves new StackPointer value in &Task
-            "msr	psp, r3",               // Moves StackPointer in PSP
-            in(reg) &self.sp
-        );
-        #[cfg(not(armv6m))]
-        asm!(
-            "ldr    r3, [{0}]",             // Get value of StackPointer
-            "ldmfd  r3!, {{r4-r11}}",       // Load Context
-            "str    r3, [{0}]",             // Saves new Stackpointer value in &PCB
-            "msr	psp, r3",               // Moves r3 in PSP
-            "isb",
-            in(reg) &self.sp
-        );
-    }
-
 }
 
 //***************************************************************************************************************

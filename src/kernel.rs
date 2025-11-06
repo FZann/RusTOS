@@ -53,6 +53,7 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
+use core::task;
 
 //*********************************************************************************************************************
 // TYPES DEFINITION
@@ -72,7 +73,7 @@ pub(crate) union Vector {
 
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum SysCallType {
+pub(crate) enum SysCallID {
     Nop = 0,
     StartScheduler = 1,
     ContextSwitch = 2,
@@ -81,15 +82,15 @@ pub(crate) enum SysCallType {
     SetTaskStop = 5,
 }
 
-impl Into<SysCallType> for u32 {
-    fn into(self) -> SysCallType {
+impl Into<SysCallID> for u32 {
+    fn into(self) -> SysCallID {
         match self {
-            1 => SysCallType::StartScheduler,
-            2 => SysCallType::ContextSwitch,
-            3 => SysCallType::SetTaskIdle,
-            4 => SysCallType::SetTaskSleep,
-            5 => SysCallType::SetTaskStop,
-            _ => SysCallType::Nop,
+            1 => SysCallID::StartScheduler,
+            2 => SysCallID::ContextSwitch,
+            3 => SysCallID::SetTaskIdle,
+            4 => SysCallID::SetTaskSleep,
+            5 => SysCallID::SetTaskStop,
+            _ => SysCallID::Nop,
         }
     }
 }
@@ -758,6 +759,14 @@ impl TimerList {
 // KERNEL
 //*********************************************************************************************************************
 
+trait SysCall {
+    fn start_scheduler(task: &Task) -> !;
+    fn context_switch(task: &Task);
+    fn set_task_idle(task: &Task);
+    fn set_task_sleep(task: &Task, ticks: Ticks);
+    fn set_task_stop(task: &Task);
+}
+
 /// Scheduler keeps in memory variables used to complete context switching.
 /// This way we avoid using a series of 'unsafe' to modify static global data.
 pub struct Kernel {
@@ -792,14 +801,7 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub fn init(&self, cs: CritSect) -> ! {
-        drop(cs);
-        Kernel::SystemCall(SysCallType::StartScheduler);
-        unreachable!();
-    }
-
-    #[inline(always)]
-    pub(crate) fn start(&mut self) -> ! {
+    pub fn init(&mut self, cs: CritSect) -> ! {
         // Setup of CPU core peripherals
         self.setup_clock();
 
@@ -812,12 +814,11 @@ impl Kernel {
             let idle = &raw mut IDLE_TASK;
             self.running.write(idle);
             (&mut *idle).setup();
-
-            let cs = CritSect::activate();
-            Kernel::start_task(self.running(), cs);
+            
+            Kernel::start_task(self.running());
         }
-
         // We should never arrive here, as CPU is under Scheluder control
+        unreachable!();
     }
 
     #[inline]
