@@ -39,10 +39,15 @@ pub struct ExceptionFrame {
     pc: u32,
     xpsr: u32,
 
+    #[cfg(has_fpu)]
     #[cfg(feature = "fpu_enabled")]
     fpu_regs: [u32; 16],
+
+    #[cfg(has_fpu)]
     #[cfg(feature = "fpu_enabled")]
     fpscr: u32,
+
+    #[cfg(has_fpu)]
     #[cfg(feature = "fpu_enabled")]
     reserved: u32,
 }

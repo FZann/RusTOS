@@ -31,6 +31,7 @@ mod arch;
 use arch::core::CorePeripherals;
 use arch::core::CpuContext;
 
+#[cfg(has_fpu)]
 #[cfg(feature = "fpu_enabled")]
 use arch::core::FpuContext;
 
