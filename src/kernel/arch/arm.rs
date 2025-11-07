@@ -18,13 +18,26 @@ use core::arch::{asm, naked_asm};
 use core::marker::PhantomData;
 
 use crate::hw::CPU_FREQUENCY;
-use crate::kernel::{self, SysCalls, Task};
+use crate::kernel::{SysCall, SysCallID}; 
+use crate::kernel::{Task, Ticks};
+use crate::kernel::{Kernel, KERNEL};
 use crate::kernel::CritSect;
-use crate::kernel::SysCallID;
 use crate::kernel::ExecContext;
 use crate::kernel::Vector;
-use crate::kernel::{Kernel, KERNEL};
 use crate::kernel::registers::*;
+
+
+impl SysCallID {
+    unsafe fn call(self) -> ! {
+        match self {
+            SysCallID::Nop => asm!("svc 0", options(noreturn)),
+            SysCallID::StartScheduler => asm!("svc 1", options(noreturn)),
+            SysCallID::SetTaskIdle => asm!("svc 2", options(noreturn)),
+            SysCallID::SetTaskSleep => asm!("svc 3", options(noreturn)),
+            SysCallID::SetTaskStop => asm!("svc 4", options(noreturn)),
+        }
+    }
+}
 
 /// Stack frame hardware saved by Cortex-M CPUs
 /// Permits to visualize register values before last exception
@@ -457,11 +470,50 @@ extern "C" fn SVCall() {
     let k = unsafe { KERNEL.access_unsafe() };
     match syscall {
         SysCallID::Nop => (),
+
         SysCallID::StartScheduler => Kernel::start_task(k.running()),
-        SysCallID::ContextSwitch => k.core.scb.set_pendsv(),
-        SysCallID::SetTaskIdle => (),
-        SysCallID::SetTaskSleep => (),
-        SysCallID::SetTaskStop => (),
+
+        SysCallID::SetTaskIdle => {
+            let task_ptr: *const Task;
+            unsafe {
+                asm!(
+                    "mov    {0}, r4",
+                    out(reg) task_ptr,
+                );
+            }
+            let task: &Task = unsafe { &*task_ptr };
+            k.tasks.idle(task.prio);
+            k.schedule_next(CritSect::activate());
+        },
+
+        SysCallID::SetTaskSleep => {
+            let task_ptr: *const Task;
+            let ticks: Ticks;
+            unsafe {
+                asm!(
+                    "mov    {0}, r4",
+                    "mov    {1}, r5",
+                    out(reg) task_ptr,
+                    out(reg) ticks,
+                );
+            }
+            let task: &Task = unsafe { &*task_ptr };
+            k.tasks.sleep(task.prio, ticks);
+            k.schedule_next(CritSect::activate());
+        },
+
+        SysCallID::SetTaskStop => {
+            let task_ptr: *const Task;
+            unsafe {
+                asm!(
+                    "mov    {0}, r4",
+                    out(reg) task_ptr,
+                );
+            }
+            let task: &Task = unsafe { &*task_ptr };
+            k.tasks.stop(task.prio);
+            k.schedule_next(CritSect::activate());
+        },
     };
 }
 
@@ -544,27 +596,8 @@ impl Kernel {
     }
 
     #[inline(always)]
-    #[allow(non_snake_case)]
-    pub(crate) fn SystemCall(sys_call: SysCallID) {
-        unsafe {
-            match sys_call {
-                SysCallID::Nop => (),
-                SysCallID::StartScheduler =>  asm!("svc    1"),
-                SysCallID::ContextSwitch =>   asm!("svc    2"),
-                SysCallID::SetTaskIdle =>     asm!("svc    3"),
-                SysCallID::SetTaskSleep =>    asm!("svc    4"),
-                SysCallID::SetTaskStop =>     asm!("svc    5"),
-            }
-        }
-    }
-
-    #[inline(always)]
     pub(crate) fn request_context_switch(&self) {
-        if Kernel::get_context().is_privileged() {
-            self.core.scb.set_pendsv();
-        } else {
-            Kernel::SystemCall(SysCallID::ContextSwitch);
-        }
+        self.core.scb.set_pendsv();
     }
 
     #[inline(always)]
@@ -597,37 +630,48 @@ impl Kernel {
 /// users tasks... so user could implement its drivers, but in a predefined way.
 /// Don't know. Many things to study and be aware of.
 /// Best thing is to try and see what is it's outcome.
-impl kernel::SysCall for Kernel {
+impl SysCall for Kernel {
     #[inline(always)]
-    fn start_scheduler(task: &Task) -> ! {
-        unsafe { 
-            asm!(
-                "mov    r4, {0}",
-                "svc    1", 
-                in(reg) task as *const Task,
-                options(noreturn)
-            ); 
-        }   
-    }
-
-    #[inline(always)]
-    fn context_switch(_task: &Task) {
-        unsafe { asm!("svc    2", options(noreturn)); }
+    fn start_scheduler(_task: &Task) -> ! {
+        unsafe { SysCallID::StartScheduler.call() };
     }
 
     #[inline(always)]
     fn set_task_idle(task: &Task) {
-
+        unsafe { 
+            task.context.save();
+            asm!(
+                "mov    r4, {0}",
+                in(reg) task
+            ); 
+            SysCallID::SetTaskIdle.call();  
+        }  
     }
 
     #[inline(always)]
-    fn set_task_sleep(task: &Task, ticks: kernel::Ticks) {
-
+    fn set_task_sleep(task: &Task, ticks: Ticks) {
+        unsafe { 
+            task.context.save();
+            asm!(
+                "mov    r4, {0}",
+                "mov    r5, {1}",
+                in(reg) task,
+                in(reg) ticks
+            ); 
+            SysCallID::SetTaskSleep.call();
+        }  
     }
 
     #[inline(always)]
     fn set_task_stop(task: &Task) {
-
+        unsafe { 
+            task.context.save();
+            asm!(
+                "mov    r4, {0}",
+                in(reg) task
+            ); 
+            SysCallID::SetTaskStop.call();
+        }  
     }
 
 }
@@ -659,6 +703,7 @@ impl Task {
         stack[len - 16] = 0x4; // R4
 
         self.sp = (&stack[len - 16] as *const usize) as usize;
+        self.context.sp = self.sp as u32;
         self.stack_start = (&stack[len - 01] as *const usize) as usize;
         
         #[cfg(armv8m)] 

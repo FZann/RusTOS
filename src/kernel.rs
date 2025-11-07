@@ -53,7 +53,6 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
-use core::task;
 
 //*********************************************************************************************************************
 // TYPES DEFINITION
@@ -76,20 +75,18 @@ pub(crate) union Vector {
 pub(crate) enum SysCallID {
     Nop = 0,
     StartScheduler = 1,
-    ContextSwitch = 2,
-    SetTaskIdle = 3,
-    SetTaskSleep = 4,
-    SetTaskStop = 5,
+    SetTaskIdle = 2,
+    SetTaskSleep = 3,
+    SetTaskStop = 4,
 }
 
 impl Into<SysCallID> for u32 {
     fn into(self) -> SysCallID {
         match self {
             1 => SysCallID::StartScheduler,
-            2 => SysCallID::ContextSwitch,
-            3 => SysCallID::SetTaskIdle,
-            4 => SysCallID::SetTaskSleep,
-            5 => SysCallID::SetTaskStop,
+            2 => SysCallID::SetTaskIdle,
+            3 => SysCallID::SetTaskSleep,
+            4 => SysCallID::SetTaskStop,
             _ => SysCallID::Nop,
         }
     }
@@ -761,7 +758,6 @@ impl TimerList {
 
 trait SysCall {
     fn start_scheduler(task: &Task) -> !;
-    fn context_switch(task: &Task);
     fn set_task_idle(task: &Task);
     fn set_task_sleep(task: &Task, ticks: Ticks);
     fn set_task_stop(task: &Task);
@@ -815,10 +811,9 @@ impl Kernel {
             self.running.write(idle);
             (&mut *idle).setup();
             
-            Kernel::start_task(self.running());
+            Kernel::start_scheduler(self.running());
         }
         // We should never arrive here, as CPU is under Scheluder control
-        unreachable!();
     }
 
     #[inline]
