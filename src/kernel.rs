@@ -203,7 +203,6 @@ impl<T: ?Sized> NullablePtr<T> {
             self.set(val);
             unsafe { Some(ptr.as_mut()) }
         } else {
-            self.set(val);
             None
         }
     }
@@ -1059,6 +1058,7 @@ impl Kernel {
                 if let Ok(id) = smph.locked.find_highest_set() {
                     smph.locked.clear(id);
                     self.tasks.idle(id);
+                    self.schedule_next();
                 }
             }
         }
@@ -1100,6 +1100,7 @@ impl Semaphore {
     }
 
     pub fn acquire(&self, task: &Task) {
+        // A Critical section is not required as Semaphore is implmented as an atomic bitvector
         self.locked.set(task.prio);
         SysCalls::set_task_stop(task.prio);
     }
