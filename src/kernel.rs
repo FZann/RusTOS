@@ -774,7 +774,7 @@ impl SysCallFns for SysCalls {
     #[inline(always)]
     fn start_scheduler(task: &Task) -> ! {
         unsafe { 
-            SysCalls::set0(task.prio);
+            SysCalls::set0(task as *const Task as usize);
             SysCalls::StartScheduler.call();
             unreachable!();
         };
@@ -997,7 +997,7 @@ impl Kernel {
             SysCalls::Nop => {},
 
             SysCalls::StartScheduler => {
-                let task: &Task = self.tasks.get_ref(SysCalls::arg0());
+                let task: &Task = unsafe { &*(SysCalls::arg0() as *const Task) };
                 Kernel::start_task(task);
             },
 

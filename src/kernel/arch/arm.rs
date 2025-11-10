@@ -450,7 +450,11 @@ extern "C" fn SVCall() {
     let frame: *const ExceptionFrame;
     unsafe {
         asm!(   
-            "mrs    {0}, PSP",
+            "mrs    r0, CONTROL",
+            "tst    r0, #2",
+            "ite    eq",
+            "mrseq  {0}, MSP",
+            "mrsne  {0}, PSP",
             out(reg) frame,
         );
     }
@@ -681,16 +685,6 @@ impl Task {
         stack[len - 06] = 0x2; // R2
         stack[len - 07] = 0x1; // R1
         stack[len - 08] = pointer; // R0
-
-        // Software stack; this is not strictly necessary, but it is useful for debugging
-        stack[len - 09] = 0xB; // R11
-        stack[len - 10] = 0xA; // R10
-        stack[len - 11] = 0x9; // R9
-        stack[len - 12] = 0x8; // R8
-        stack[len - 13] = 0x7; // R7
-        stack[len - 14] = 0x6; // R6
-        stack[len - 15] = 0x5; // R5
-        stack[len - 16] = 0x4; // R4
 
         self.sp = (&stack[len - 16] as *const usize) as usize;
         self.context.sp = self.sp;
