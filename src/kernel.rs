@@ -69,29 +69,6 @@ pub(crate) union Vector {
     pub reserved: usize,
 }
 
-
-#[derive(PartialEq, PartialOrd, Clone, Copy)]
-#[repr(u8)]
-pub(crate) enum SysCallID {
-    Nop = 0,
-    StartScheduler = 1,
-    SetTaskIdle = 2,
-    SetTaskSleep = 3,
-    SetTaskStop = 4,
-}
-
-impl Into<SysCallID> for u32 {
-    fn into(self) -> SysCallID {
-        match self {
-            1 => SysCallID::StartScheduler,
-            2 => SysCallID::SetTaskIdle,
-            3 => SysCallID::SetTaskSleep,
-            4 => SysCallID::SetTaskStop,
-            _ => SysCallID::Nop,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(PartialEq, Eq)]
 pub enum ExecContext {
@@ -304,7 +281,8 @@ fn OSHardFault(_frame: &ExceptionFrame, running: &mut Task) {
     running.stop();
 
     let cs = CritSect::activate();
-    KERNEL.access(&cs).schedule_next(cs);
+    KERNEL.access(&cs).schedule_next();
+    cs.deactivate();
 }
 
 #[no_mangle]
@@ -425,7 +403,7 @@ impl Task {
     }
 
     pub(crate) fn update_watermark(&mut self) {
-        let words = (self.stack_start - self.sp) >> 2;
+        let words = (self.stack_start - self.context.sp()) >> 2;
         if words > self.stack_watermark {
             self.stack_watermark = words;
         }
@@ -440,27 +418,15 @@ impl Task {
     }
 
     pub fn idle(&mut self) {
-        KERNEL.with(|cs, k| {
-                k.tasks.idle(self.prio);
-                k.schedule_next(cs);
-            }
-        );
+        SysCalls::set_task_idle(self.prio);
     }
 
     pub fn stop(&mut self) {
-        KERNEL.with(|cs, k| {
-                k.tasks.stop(self.prio);
-                k.schedule_next(cs);
-            }
-        );
+        SysCalls::set_task_stop(self.prio);
     }
 
     pub fn sleep(&mut self, ticks: Ticks) {
-        KERNEL.with(|cs, k| {
-                k.tasks.sleep(self.prio, ticks);
-                k.schedule_next(cs);
-            }
-        );
+        SysCalls::set_task_sleep(self.prio, ticks);
     }
 }
 
@@ -753,15 +719,141 @@ impl TimerList {
 
 
 //*********************************************************************************************************************
-// KERNEL
+// SYSCALLS
 //*********************************************************************************************************************
 
-trait SysCall {
+trait SysCallFns: SysCallArgs {
     fn start_scheduler(task: &Task) -> !;
-    fn set_task_idle(task: &Task);
-    fn set_task_sleep(task: &Task, ticks: Ticks);
-    fn set_task_stop(task: &Task);
+    fn set_task_idle(id: usize);
+    fn set_task_sleep(id: usize, ticks: Ticks);
+    fn set_task_stop(id: usize);
+    fn meet_at_rendezvous(rndv: &Rendezvous, id: usize);
+    fn wait_semaphore(smph: &Semaphore, id: usize, ticks: Ticks);
+    fn release_semaphore(smph: &Semaphore, cs: CritSect);
 }
+
+trait SysCallArgs {
+    fn set0(val: usize);
+    fn set1(val: usize);
+    fn set2(val: usize);
+    fn set3(val: usize);
+    fn arg0() -> usize;
+    fn arg1() -> usize;
+    fn arg2() -> usize;
+    fn arg3() -> usize;
+}
+
+#[derive(PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum SysCalls {
+    Nop = 0,
+    StartScheduler = 1,
+    SetTaskIdle = 2,
+    SetTaskSleep = 3,
+    SetTaskStop = 4,
+    MeetAtRendezvous = 5,
+    WaitSemaphore = 6,
+    ReleaseSemaphore = 7,
+}
+
+impl Into<SysCalls> for u32 {
+    fn into(self) -> SysCalls {
+        match self {
+            1 => SysCalls::StartScheduler,
+            2 => SysCalls::SetTaskIdle,
+            3 => SysCalls::SetTaskSleep,
+            4 => SysCalls::SetTaskStop,
+            5 => SysCalls::MeetAtRendezvous,
+            6 => SysCalls::WaitSemaphore,
+            7 => SysCalls::ReleaseSemaphore,
+            _ => SysCalls::Nop,
+        }
+    }
+}
+
+impl SysCallFns for SysCalls {
+    #[inline(always)]
+    fn start_scheduler(task: &Task) -> ! {
+        unsafe { 
+            SysCalls::set0(task.prio);
+            SysCalls::StartScheduler.call();
+            unreachable!();
+        };
+    }
+
+    #[inline(always)]
+    fn set_task_idle(id: usize) {
+        unsafe {
+            let cs = CritSect::activate(); 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(id);
+            cs.deactivate();
+            SysCalls::SetTaskIdle.call();  
+        }  
+    }
+
+    #[inline(always)]
+    fn set_task_sleep(id: usize, ticks: Ticks) {
+        unsafe { 
+            let cs = CritSect::activate(); 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(id);
+            SysCalls::set1(ticks as usize);
+            cs.deactivate();
+            SysCalls::SetTaskSleep.call();
+        }  
+    }
+
+    #[inline(always)]
+    fn set_task_stop(id: usize) {
+        unsafe { 
+            let cs = CritSect::activate(); 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(id);
+            cs.deactivate();
+            SysCalls::SetTaskStop.call();
+        }  
+    }
+
+    #[inline(always)]
+    fn meet_at_rendezvous(rndv: &Rendezvous, id: usize) {
+        unsafe {
+            let cs = CritSect::activate(); 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(rndv as *const Rendezvous as usize);
+            SysCalls::set1(id);
+            cs.deactivate();
+            SysCalls::MeetAtRendezvous.call();  
+        } 
+    }
+
+    #[inline(always)]
+    fn wait_semaphore(smph: &Semaphore, id: usize, ticks: Ticks) {
+        unsafe { 
+            let cs = CritSect::activate(); 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(smph as *const Semaphore as usize);
+            SysCalls::set1(id);
+            SysCalls::set2(ticks as usize);
+            cs.deactivate();
+            SysCalls::WaitSemaphore.call();
+        }
+    }
+
+    #[inline(always)]
+    fn release_semaphore(smph: &Semaphore, cs: CritSect) {
+        unsafe { 
+            KERNEL.access(&cs).running().context.save();
+            SysCalls::set0(smph as *const Semaphore as usize);
+            cs.deactivate();
+            SysCalls::ReleaseSemaphore.call();
+        }  
+    }
+}
+
+//*********************************************************************************************************************
+// KERNEL
+//*********************************************************************************************************************
 
 /// Scheduler keeps in memory variables used to complete context switching.
 /// This way we avoid using a series of 'unsafe' to modify static global data.
@@ -811,7 +903,8 @@ impl Kernel {
             self.running.write(idle);
             (&mut *idle).setup();
             
-            Kernel::start_scheduler(self.running());
+            cs.deactivate();
+            SysCalls::start_scheduler(self.running());
         }
         // We should never arrive here, as CPU is under Scheluder control
     }
@@ -869,13 +962,12 @@ impl Kernel {
         self.timers.tick_timers();
     }
 
-    pub(crate) fn schedule_next(&mut self, cs: CritSect) {
+    pub(crate) fn schedule_next(&mut self) {
         match (self.running().prio, self.tasks.next_waiting()) {
             // New task to be scheduled
             (run, Ok(next)) if next != run => {
                 self.next = MaybeUninit::new(self.tasks.get_ref(next));
                 //self.core.sleep_on_exit(false);
-                cs.deactivate();
                 self.request_context_switch();
             }
 
@@ -887,7 +979,6 @@ impl Kernel {
                 //self.core.sleep_on_exit(true);    
 
                 self.next = MaybeUninit::new(&raw const IDLE_TASK);
-                cs.deactivate();
                 self.request_context_switch();
             }
 
@@ -896,12 +987,89 @@ impl Kernel {
         }
     }
 
+    /// This function handles all SysCalls made by Tasks.
+    /// It decodes SysCall type and arguments, then executes required operations.
+    /// Finally, it calls schedule_next to verify if a context switch is required.
+    /// This function is called from assembly code that handles SysCall exception.
+    /// It is executed in privileged mode at maximum priority level, so no other
+    /// interrupt can preempt it.
+    pub(crate) fn handle_syscall(&mut self, call: SysCalls) {
+        match call {
+            SysCalls::Nop => {},
+
+            SysCalls::StartScheduler => {
+                let task: &Task = self.tasks.get_ref(SysCalls::arg0());
+                Kernel::start_task(task);
+            },
+
+            SysCalls::SetTaskIdle => {
+                let id = SysCalls::arg0();
+                self.tasks.idle(id);
+                self.schedule_next();
+            },
+
+            SysCalls::SetTaskSleep => {
+                let id = SysCalls::arg0();
+                let ticks: Ticks = SysCalls::arg1() as u32;
+                self.tasks.sleep(id, ticks);
+                self.schedule_next();
+            },
+
+            SysCalls::SetTaskStop => {
+                let id = SysCalls::arg0();
+                self.tasks.stop(id);
+                self.schedule_next();
+            },
+
+            SysCalls::MeetAtRendezvous => {
+                // Safety: we trust that the pointer passed is valid due to Rust's ownership rules
+                // SysCall::MeetAtRendezvous is called with a &Rendezvous reference
+                let rndv = unsafe { &*(SysCalls::arg0() as *const Rendezvous) };
+                let id = SysCalls::arg1();
+                
+                rndv.arrived.set(id);
+                if rndv.arrived.superset_of(&rndv.mask) {
+                    let arrived = rndv.arrived.raw() as u32;
+                    rndv.arrived.reset();
+                    
+                    self.tasks.ready |= arrived.into();
+                    self.tasks.sleeping &= (!arrived).into();
+                } else {
+                    self.tasks.stop(id);
+                }
+
+                self.schedule_next();
+            },
+
+            SysCalls::WaitSemaphore => {
+                // Safety: we trust that the pointer passed is valid due to Rust's ownership rules
+                // SysCall::WaitSemaphore is called with a &Semaphore reference
+                let smph = unsafe { &*(SysCalls::arg0() as *const Semaphore) };
+                let id = SysCalls::arg1();
+                let ticks: Ticks = SysCalls::arg2() as u32;
+
+                smph.locked.set(id);
+                self.tasks.sleep(id, ticks);
+                self.tasks.get_ref_mut(id).semaphore.set(Some(smph));
+                self.schedule_next();
+            },
+
+            SysCalls::ReleaseSemaphore => {
+                let smph = unsafe { &*(SysCalls::arg0() as *const Semaphore) };
+                if let Ok(id) = smph.locked.find_highest_set() {
+                    smph.locked.clear(id);
+                    self.tasks.idle(id);
+                }
+            }
+        }
+    }
+
     #[no_mangle]
     pub(crate) fn switch_to_next(&mut self) {
         unsafe {
-            self.running().context.save();
+            // self.running().context.save(); // should be already saved by SysCall handler
             self.running_mut().update_watermark();
-                    
+
             self.running = self.next;
             self.next = MaybeUninit::new(&raw const IDLE_TASK);
             self.running().context.load();
@@ -932,29 +1100,13 @@ impl Semaphore {
     }
 
     pub fn acquire(&self, task: &Task) {
-        let cs = CritSect::activate();
-        self.acquire_cs(task, cs);
-    }
-
-    #[inline]
-    fn acquire_cs(&self, task: &Task, cs: CritSect) {
         self.locked.set(task.prio);
-        KERNEL.access(&cs).tasks.stop(task.prio);
-        KERNEL.access(&cs).schedule_next(cs);
+        SysCalls::set_task_stop(task.prio);
     }
 
-    pub fn wait(&self, task: &mut Task, timeout: ms) -> Result<(), ()>{
-        let cs = CritSect::activate();
-        self.wait_cs(task, timeout, cs)
-    }
-
-    #[inline]
-    fn wait_cs(&self, task: &mut Task, timeout: ms, cs: CritSect) -> Result<(), ()>{
-        self.locked.set(task.prio);
-        task.semaphore.set(Some(self));
-        KERNEL.access(&cs).tasks.sleep(task.prio, timeout.into());
-        KERNEL.access(&cs).schedule_next(cs);
-
+    pub fn wait(&self, task: &mut Task, timeout: ms) -> Result<(), ()> {
+        SysCalls::wait_semaphore(self, task.prio, timeout.into());
+        
         if KERNEL.read().tasks.sleep_time[task.prio] != 0 {
             Ok(())
         } else {
@@ -967,13 +1119,8 @@ impl Semaphore {
         self.release_cs(cs);
     }
 
-    #[inline]
     fn release_cs(&self, cs: CritSect) {
-        if let Ok(id) = self.locked.find_highest_set() {
-            self.locked.clear(id);
-            KERNEL.access(&cs).tasks.idle(id);
-            KERNEL.access(&cs).schedule_next(cs);
-        }
+        SysCalls::release_semaphore(self, cs);
     }
 }
 
@@ -1001,23 +1148,8 @@ impl Rendezvous {
     }
 
     pub fn meet(&self, task: &Task) {
-        let cs = CritSect::activate();
-        let id = task.prio;
-        self.arrived.set(id);
-        
-        if self.arrived.superset_of(&self.mask) {
-            KERNEL.access(&cs).tasks.ready |= self.arrived.raw().into();
-            KERNEL.access(&cs).tasks.sleeping &= (!self.arrived.raw()).into();
-
-            // All arrived, empty the BitVec
-            self.arrived.reset();
-            KERNEL.access(&cs).schedule_next(cs);
-        } else {
-            KERNEL.access(&cs).tasks.stop(id);
-            KERNEL.access(&cs).schedule_next(cs);
-        }
+        SysCalls::meet_at_rendezvous(self, task.prio);
     }
-
 }
 
 

@@ -18,26 +18,13 @@ use core::arch::{asm, naked_asm};
 use core::marker::PhantomData;
 
 use crate::hw::CPU_FREQUENCY;
-use crate::kernel::{SysCall, SysCallID}; 
-use crate::kernel::{Task, Ticks};
+use crate::kernel::{SysCallArgs, SysCalls}; 
+use crate::kernel::Task;
 use crate::kernel::{Kernel, KERNEL};
 use crate::kernel::CritSect;
 use crate::kernel::ExecContext;
 use crate::kernel::Vector;
 use crate::kernel::registers::*;
-
-
-impl SysCallID {
-    unsafe fn call(self) -> ! {
-        match self {
-            SysCallID::Nop => asm!("svc 0", options(noreturn)),
-            SysCallID::StartScheduler => asm!("svc 1", options(noreturn)),
-            SysCallID::SetTaskIdle => asm!("svc 2", options(noreturn)),
-            SysCallID::SetTaskSleep => asm!("svc 3", options(noreturn)),
-            SysCallID::SetTaskStop => asm!("svc 4", options(noreturn)),
-        }
-    }
-}
 
 /// Stack frame hardware saved by Cortex-M CPUs
 /// Permits to visualize register values before last exception
@@ -69,17 +56,17 @@ pub struct ExceptionFrame {
 #[derive(Debug)]
 #[repr(C)]
 pub struct CpuContext {
-    r4: u32,
-    r5: u32,
-    r6: u32,
-    r7: u32,
-    r8: u32,
-    r9: u32,
-    r10: u32,
-    r11: u32,
-    sp: u32,
+    r4: usize,
+    r5: usize,
+    r6: usize,
+    r7: usize,
+    r8: usize,
+    r9: usize,
+    r10: usize,
+    r11: usize,
+    sp: usize,
     #[cfg(armv8m)]
-    psplim: u32,
+    psplim: usize,
 }
 
 impl CpuContext {
@@ -109,7 +96,7 @@ impl CpuContext {
             "mov    r6, r10",
             "mov    r7, r11",
             "stm    {1}, {{r4-r7}}",
-            "mrs    r1, psp",
+            "mrs    r1, PSP",
             "str    r1, [{2}]",
             in(reg) &self.r4,
             in(reg) &self.r8,
@@ -118,7 +105,7 @@ impl CpuContext {
         #[cfg(not(armv6m))]
         asm!(
             "stm    {0}, {{r4-r11}}",
-            "mrs    r1, psp",
+            "mrs    r1, PSP",
             "str    r1, [{1}]",
             in(reg) &self.r4,
             in(reg) &self.sp,
@@ -136,7 +123,7 @@ impl CpuContext {
             "mov    r11, r7",
             "ldm    {1}, {{r4-r7}}",
             "ldr    r1, [{2}]",
-            "msr    r1, psp",
+            "msr    PSP, r1",
             in(reg) &self.r8,
             in(reg) &self.r4,
             in(reg) &self.sp,
@@ -145,7 +132,7 @@ impl CpuContext {
         asm!(
             "ldm    {0}, {{r4-r11}}",
             "ldr    r1, [{1}]",
-            "msr    r1, psp",
+            "msr    PSP, r1",
             in(reg) &self.r4,
             in(reg) &self.sp,
         );
@@ -155,6 +142,10 @@ impl CpuContext {
             "msr    r2, psplim",
             in(reg) &self.psplim,
         );
+    }
+
+    pub(crate) fn sp(&self) -> usize {
+        self.sp
     }
 }
 
@@ -465,56 +456,10 @@ extern "C" fn SVCall() {
     }
 
     // Extract syscall number from PC, as it is encoded as immediate into low byte of SVC instruction
-    let syscall: SysCallID = unsafe { ((*frame).pc & 0xFF).into() };
+    let syscall: SysCalls = unsafe { ((*frame).pc & 0xFF).into() };
 
-    let k = unsafe { KERNEL.access_unsafe() };
-    match syscall {
-        SysCallID::Nop => (),
-
-        SysCallID::StartScheduler => Kernel::start_task(k.running()),
-
-        SysCallID::SetTaskIdle => {
-            let task_ptr: *const Task;
-            unsafe {
-                asm!(
-                    "mov    {0}, r4",
-                    out(reg) task_ptr,
-                );
-            }
-            let task: &Task = unsafe { &*task_ptr };
-            k.tasks.idle(task.prio);
-            k.schedule_next(CritSect::activate());
-        },
-
-        SysCallID::SetTaskSleep => {
-            let task_ptr: *const Task;
-            let ticks: Ticks;
-            unsafe {
-                asm!(
-                    "mov    {0}, r4",
-                    "mov    {1}, r5",
-                    out(reg) task_ptr,
-                    out(reg) ticks,
-                );
-            }
-            let task: &Task = unsafe { &*task_ptr };
-            k.tasks.sleep(task.prio, ticks);
-            k.schedule_next(CritSect::activate());
-        },
-
-        SysCallID::SetTaskStop => {
-            let task_ptr: *const Task;
-            unsafe {
-                asm!(
-                    "mov    {0}, r4",
-                    out(reg) task_ptr,
-                );
-            }
-            let task: &Task = unsafe { &*task_ptr };
-            k.tasks.stop(task.prio);
-            k.schedule_next(CritSect::activate());
-        },
-    };
+    // Access Kernel without critical section, as we are already at max priority
+    unsafe { KERNEL.access_unsafe().handle_syscall(syscall) };
 }
 
 #[no_mangle]
@@ -546,8 +491,110 @@ unsafe extern "C" fn PendSV() {
 extern "C" fn SysTick() {
     let cs = CritSect::activate();
     KERNEL.access(&cs).inc_system_ticks();
-    KERNEL.access(&cs).schedule_next(cs);
+    KERNEL.access(&cs).request_context_switch();
+    cs.deactivate();
 }
+
+//***************************************************************************************************************
+// SYSCALLS IMPLEMENTATION
+//***************************************************************************************************************
+impl SysCallArgs for SysCalls {
+    fn set0(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r4, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set1(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r5, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set2(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r6, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set3(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r7, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn arg0() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r4",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+    
+    fn arg1() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r5",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+
+    fn arg2() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r6",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+
+    fn arg3() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r7",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+}
+
+impl SysCalls {
+    pub(crate) unsafe fn call(self) {
+        match self {
+            SysCalls::Nop => asm!("svc 0", options(noreturn)),
+            SysCalls::StartScheduler => asm!("svc 1", options(noreturn)),
+            SysCalls::SetTaskIdle => asm!("svc 2", options(noreturn)),
+            SysCalls::SetTaskSleep => asm!("svc 3", options(noreturn)),
+            SysCalls::SetTaskStop => asm!("svc 4", options(noreturn)),
+            SysCalls::MeetAtRendezvous => asm!("svc 5", options(noreturn)),
+            SysCalls::WaitSemaphore => asm!("svc 6", options(noreturn)),
+            SysCalls::ReleaseSemaphore => asm!("svc 7", options(noreturn)),
+        }
+    }
+}
+
 
 //***************************************************************************************************************
 // KERNEL ASSEMBLY
@@ -582,9 +629,8 @@ impl Kernel {
     }
 
     #[inline(always)]
-    fn start_task(task: &Task) -> ! {
+    pub(crate) fn back_to_task() -> ! {
         unsafe {
-            task.context.load();
             asm!(
                 // Going back to thread, using PSP and in non-privileged mode
                 "ldr    lr, =0xFFFFFFFD",
@@ -592,6 +638,14 @@ impl Kernel {
                 "bx     lr",
                 options(noreturn)
             );
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn start_task(task: &Task) -> ! {
+        unsafe {
+            task.context.load();
+            Kernel::back_to_task();
         }
     }
 
@@ -612,70 +666,6 @@ impl Kernel {
         }
     }
 }
-
-/// To implement SysCalls with arguments and return values, we should
-/// add CpuContext to TCB before, as that is foundamental to have!
-/// To make arguments, we must save Task state and then we could assing regs 
-/// to syscall's arguments.
-/// To make return values, we must restore state and then assign regs to 
-/// syscall's return values; otherwise we could modify task's saved state
-/// directly, and then do a simple context restore.
-/// SysCalls should be at higher priority than other things (beside other exceptions)
-/// to be sure an other ISR do not interfere with arguments/return registers.
-/// SysCalls could be implemented... but: are they useful?
-/// A project's objective is to have HW SysCalls, but I am thinking hard about that:
-/// HW is readily accessible from Non-Privileged context, so why have SysCall?
-/// We could have driver tasks that R/W directly into peripheral memory without SysCalls.
-/// Perhaps we could implement a "Driver Task List" into the Kernel and parse that before
-/// users tasks... so user could implement its drivers, but in a predefined way.
-/// Don't know. Many things to study and be aware of.
-/// Best thing is to try and see what is it's outcome.
-impl SysCall for Kernel {
-    #[inline(always)]
-    fn start_scheduler(_task: &Task) -> ! {
-        unsafe { SysCallID::StartScheduler.call() };
-    }
-
-    #[inline(always)]
-    fn set_task_idle(task: &Task) {
-        unsafe { 
-            task.context.save();
-            asm!(
-                "mov    r4, {0}",
-                in(reg) task
-            ); 
-            SysCallID::SetTaskIdle.call();  
-        }  
-    }
-
-    #[inline(always)]
-    fn set_task_sleep(task: &Task, ticks: Ticks) {
-        unsafe { 
-            task.context.save();
-            asm!(
-                "mov    r4, {0}",
-                "mov    r5, {1}",
-                in(reg) task,
-                in(reg) ticks
-            ); 
-            SysCallID::SetTaskSleep.call();
-        }  
-    }
-
-    #[inline(always)]
-    fn set_task_stop(task: &Task) {
-        unsafe { 
-            task.context.save();
-            asm!(
-                "mov    r4, {0}",
-                in(reg) task
-            ); 
-            SysCallID::SetTaskStop.call();
-        }  
-    }
-
-}
-
 
 impl Task {
     pub(crate) fn setup(&mut self) {
@@ -703,12 +693,12 @@ impl Task {
         stack[len - 16] = 0x4; // R4
 
         self.sp = (&stack[len - 16] as *const usize) as usize;
-        self.context.sp = self.sp as u32;
+        self.context.sp = self.sp;
         self.stack_start = (&stack[len - 01] as *const usize) as usize;
         
         #[cfg(armv8m)] 
         {
-            self.context.psplim = self.stack as u32;
+            self.context.psplim = self.stack;
         }
     }
 }
