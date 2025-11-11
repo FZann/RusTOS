@@ -495,7 +495,7 @@ unsafe extern "C" fn PendSV() {
 extern "C" fn SysTick() {
     let cs = CritSect::activate();
     KERNEL.access(&cs).inc_system_ticks();
-    KERNEL.access(&cs).request_context_switch();
+    KERNEL.access(&cs).schedule_next();
     cs.deactivate();
 }
 
