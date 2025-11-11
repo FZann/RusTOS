@@ -450,11 +450,7 @@ extern "C" fn SVCall() {
     let frame: *const ExceptionFrame;
     unsafe {
         asm!(   
-            "mrs    r0, CONTROL",
-            "tst    r0, #2",
-            "ite    eq",
-            "mrseq  {0}, MSP",
-            "mrsne  {0}, PSP",
+            "mrs    {0}, MSP",
             out(reg) frame,
         );
     }
@@ -633,8 +629,9 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub(crate) fn back_to_task() -> ! {
+    pub(crate) fn start_task(task: &Task) -> ! {
         unsafe {
+            task.context.load();
             asm!(
                 // Going back to thread, using PSP and in non-privileged mode
                 "ldr    lr, =0xFFFFFFFD",
@@ -642,14 +639,6 @@ impl Kernel {
                 "bx     lr",
                 options(noreturn)
             );
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn start_task(task: &Task) -> ! {
-        unsafe {
-            task.context.load();
-            Kernel::back_to_task();
         }
     }
 
