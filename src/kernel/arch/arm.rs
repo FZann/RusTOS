@@ -104,11 +104,9 @@ impl CpuContext {
         );
         #[cfg(not(armv6m))]
         asm!(
-            "stm    {0}, {{r4-r11}}",
-            "mrs    r1, PSP",
-            "str    r1, [{1}]",
+            "mrs    r12, PSP",
+            "stm    {0}, {{r4-r12}}",
             in(reg) &self.r4,
-            in(reg) &self.sp,
         );
     }
 
@@ -139,11 +137,9 @@ impl CpuContext {
         );
         #[cfg(not(armv6m))]
         asm!(
-            "ldm    {0}, {{r4-r11}}",
-            "ldr    r1, [{1}]",
-            "msr    PSP, r1",
+            "ldm    {0}, {{r4-r12}}",
+            "msr    PSP, r12",
             in(reg) &self.r4,
-            in(reg) &self.sp,
         );
         #[cfg(armv8m)]
         asm!(

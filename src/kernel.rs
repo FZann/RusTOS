@@ -1004,7 +1004,6 @@ impl Kernel {
 
             // Same task to execute
             _ => { 
-                unsafe { self.running_mut().context.save_psp() };
                 Kernel::start_task(self.running());
             }
         }
