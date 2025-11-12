@@ -353,7 +353,6 @@ impl<const WORDS: usize> Stack<WORDS> {
 #[repr(C)]
 #[derive(Debug)]
 pub struct Task {
-    sp: usize,
     stack: *const [usize],
     stack_start: usize,
     stack_watermark: usize,
@@ -384,7 +383,6 @@ impl Task {
         }
 
         Self {
-            sp: 0,
             stack: stack.as_slice(),
             stack_start: 0,
             stack_watermark: 0,
@@ -736,10 +734,18 @@ trait SysCallArgs {
     fn set1(val: usize);
     fn set2(val: usize);
     fn set3(val: usize);
+    fn set4(val: usize);
+    fn set5(val: usize);
+    fn set6(val: usize);
+    fn set7(val: usize);
     fn arg0() -> usize;
     fn arg1() -> usize;
     fn arg2() -> usize;
     fn arg3() -> usize;
+    fn arg4() -> usize;
+    fn arg5() -> usize;
+    fn arg6() -> usize;
+    fn arg7() -> usize;
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
@@ -756,6 +762,21 @@ pub(crate) enum SysCalls {
 }
 
 impl Into<SysCalls> for u32 {
+    fn into(self) -> SysCalls {
+        match self {
+            1 => SysCalls::StartScheduler,
+            2 => SysCalls::SetTaskIdle,
+            3 => SysCalls::SetTaskSleep,
+            4 => SysCalls::SetTaskStop,
+            5 => SysCalls::MeetAtRendezvous,
+            6 => SysCalls::WaitSemaphore,
+            7 => SysCalls::ReleaseSemaphore,
+            _ => SysCalls::Nop,
+        }
+    }
+}
+
+impl Into<SysCalls> for usize {
     fn into(self) -> SysCalls {
         match self {
             1 => SysCalls::StartScheduler,
@@ -982,7 +1003,10 @@ impl Kernel {
             }
 
             // Same task to execute
-            _ => {}
+            _ => { 
+                unsafe { self.running_mut().context.save_psp() };
+                Kernel::start_task(self.running());
+            }
         }
     }
 
@@ -1058,8 +1082,8 @@ impl Kernel {
                 if let Ok(id) = smph.locked.find_highest_set() {
                     smph.locked.clear(id);
                     self.tasks.idle(id);
-                    self.schedule_next();
                 }
+                self.schedule_next();
             }
         }
     }

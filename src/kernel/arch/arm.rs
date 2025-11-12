@@ -113,6 +113,15 @@ impl CpuContext {
     }
 
     #[inline(always)]
+    pub(crate) unsafe fn save_psp(&self) {
+        asm!(
+            "mrs    r1, PSP",
+            "str    r1, [{0}]",
+            in(reg) &self.sp,
+        );
+    }
+
+    #[inline(always)]
     pub(crate) unsafe fn load(&self) {
         #[cfg(armv6m)]
         asm!(
@@ -138,9 +147,18 @@ impl CpuContext {
         );
         #[cfg(armv8m)]
         asm!(
-            "ldr    r2, [{0}]",
-            "msr    r2, psplim",
+            "ldr    r1, [{0}]",
+            "msr    r1, psplim",
             in(reg) &self.psplim,
+        );
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn load_psp(&self) {
+        asm!(
+            "ldr    r1, [{0}]",
+            "msr    PSP, r1",
+            in(reg) &self.sp,
         );
     }
 
@@ -447,19 +465,14 @@ unsafe extern "C" fn SecureFault() {
 #[no_mangle]
 #[allow(non_snake_case)]
 extern "C" fn SVCall() {
-    let frame: *const ExceptionFrame;
-    unsafe {
-        asm!(   
-            "mrs    {0}, MSP",
-            out(reg) frame,
-        );
-    }
-
-    // Extract syscall number from PC, as it is encoded as immediate into low byte of SVC instruction
-    let syscall: SysCalls = unsafe { ((*frame).pc & 0xFF).into() };
+    let syscall: SysCalls = SysCalls::arg7().into();
 
     // Access Kernel without critical section, as we are already at max priority
-    unsafe { KERNEL.access_unsafe().handle_syscall(syscall) };
+    unsafe { 
+        let k = KERNEL.access_unsafe();
+        //k.running_mut().context.save_psp();
+        k.handle_syscall(syscall);
+    };
 }
 
 #[no_mangle]
@@ -490,6 +503,7 @@ unsafe extern "C" fn PendSV() {
 #[allow(non_snake_case)]
 extern "C" fn SysTick() {
     let cs = CritSect::activate();
+    //unsafe { KERNEL.access(&cs).running_mut().context.save_psp() };
     KERNEL.access(&cs).inc_system_ticks();
     KERNEL.access(&cs).schedule_next();
     cs.deactivate();
@@ -530,6 +544,42 @@ impl SysCallArgs for SysCalls {
         unsafe {
             asm!(
                 "mov    r7, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set4(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r8, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set5(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r9, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set6(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r10, {in}",
+                in = in(reg) val,
+            );
+        }
+    }
+
+    fn set7(val: usize) {
+        unsafe {
+            asm!(
+                "mov    r11, {in}",
                 in = in(reg) val,
             );
         }
@@ -578,10 +628,55 @@ impl SysCallArgs for SysCalls {
         }
         val
     }
+
+    fn arg4() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r8",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+
+    fn arg5() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r9",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+
+    fn arg6() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r10",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
+
+    fn arg7() -> usize {
+        let val: usize;
+        unsafe {
+            asm!(
+                "mov    {out}, r11",
+                out = out(reg) val,
+            );
+        }
+        val
+    }
 }
 
 impl SysCalls {
     pub(crate) unsafe fn call(self) {
+        Self::set7(self as usize);
         match self {
             SysCalls::Nop => asm!("svc 0", options(noreturn)),
             SysCalls::StartScheduler => asm!("svc 1", options(noreturn)),
@@ -662,7 +757,7 @@ impl Kernel {
 
 impl Task {
     pub(crate) fn setup(&mut self) {
-        let pointer = &raw const *self as usize;
+        let pointer = &raw const *self;
         let stack = unsafe { &mut *(self.stack as *mut [usize]) };
         let len = stack.len();
 
@@ -673,10 +768,9 @@ impl Task {
         stack[len - 05] = 0x3; // R3
         stack[len - 06] = 0x2; // R2
         stack[len - 07] = 0x1; // R1
-        stack[len - 08] = pointer; // R0
+        stack[len - 08] = pointer as usize; // R0
 
-        self.sp = (&stack[len - 16] as *const usize) as usize;
-        self.context.sp = self.sp;
+        self.context.sp = (&stack[len - 08] as *const usize) as usize;
         self.stack_start = (&stack[len - 01] as *const usize) as usize;
         
         #[cfg(armv8m)] 

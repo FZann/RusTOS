@@ -45,7 +45,6 @@ pub extern "C" fn OSEntry() -> ! {
     let k = KERNEL.access(&cs);
     let _ = k.add_task(&CIAO_TASK);
     let _ = k.add_task(&BELLO_TASK);
-    let _ = k.add_task(&UART_TASK);
     
     #[cfg(feature = "timers")]
     let _ = k.new_timer(
