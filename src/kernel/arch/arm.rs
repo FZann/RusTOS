@@ -674,14 +674,14 @@ impl SysCalls {
     pub(crate) unsafe fn call(self) {
         Self::set7(self as usize);
         match self {
-            SysCalls::Nop => asm!("svc 0", options(noreturn)),
-            SysCalls::StartScheduler => asm!("svc 1", options(noreturn)),
-            SysCalls::SetTaskIdle => asm!("svc 2", options(noreturn)),
-            SysCalls::SetTaskSleep => asm!("svc 3", options(noreturn)),
-            SysCalls::SetTaskStop => asm!("svc 4", options(noreturn)),
-            SysCalls::MeetAtRendezvous => asm!("svc 5", options(noreturn)),
-            SysCalls::WaitSemaphore => asm!("svc 6", options(noreturn)),
-            SysCalls::ReleaseSemaphore => asm!("svc 7", options(noreturn)),
+            SysCalls::Nop => asm!("svc 0"),
+            SysCalls::StartScheduler => asm!("svc 1"),
+            SysCalls::SetTaskIdle => asm!("svc 2"),
+            SysCalls::SetTaskSleep => asm!("svc 3"),
+            SysCalls::SetTaskStop => asm!("svc 4"),
+            SysCalls::MeetAtRendezvous => asm!("svc 5"),
+            SysCalls::WaitSemaphore => asm!("svc 6"),
+            SysCalls::ReleaseSemaphore => asm!("svc 7"),
         }
     }
 }
